@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0b0b0b">
+<link rel="manifest" href="/manifest.webmanifest">
+<title>Rodízio de contas</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230b0b0b'/%3E%3Crect x='7' y='13.5' width='18' height='5' rx='2.5' fill='%23fcfcfb' transform='rotate(-30 16 16)'/%3E%3C/svg%3E">
+<style>
+/* Ink, surfaces and the account palette (validated: first three slots pass all-pairs CVD in both modes). */
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --surface-2: #f2f1ed; --future: #f3f2ee;
+  --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781; --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,.10);
+  --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100; --s4: #e87ba4; --s5: #008300; --s6: #6250d6; --s7: #e34948;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b; --good-text: #006300;
+  --zone: rgba(11,11,11,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --future: #1f1f1d;
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+    --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+    --good-text: #0ca30c; --zone: rgba(255,255,255,.07);
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --future: #1f1f1d;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10);
+  --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500; --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+  --good-text: #0ca30c; --zone: rgba(255,255,255,.07);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+button, input { font: inherit; color: inherit; }
+a { color: inherit; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 28px 32px 56px; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.ink2 { color: var(--ink-2); }
+code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+
+/* top */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-bottom: 22px; border-bottom: 1px solid var(--grid); }
+.mark { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; letter-spacing: -.01em; }
+.mark svg { display: block; }
+.state { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--good); }
+.dot.live { animation: live 2s ease-in-out infinite; }
+@keyframes live { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--good) 45%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+.dot.wait { background: var(--warning); }
+@media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+.dot.off { background: var(--critical); }
+.actions { display: flex; gap: 8px; align-items: center; }
+.btn { border: 1px solid var(--grid); background: var(--surface); padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 550; white-space: nowrap; }
+.btn:hover { border-color: var(--axis); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.solid { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.btn.solid:hover { opacity: .88; }
+.btn.bare { border-color: transparent; background: none; padding: 4px 6px; color: var(--muted); font-weight: 500; }
+.btn.bare:hover { color: var(--ink); }
+.btn.bare.danger:hover { color: var(--critical); }
+
+.banner { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-top: 18px; padding: 12px 16px; border-radius: 10px; background: var(--surface-2); }
+.banner p { margin: 0; display: flex; gap: 10px; align-items: baseline; }
+.ico { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 800; color: #fff; flex: none; transform: translateY(3px); }
+.ico.critical { background: var(--critical); }
+.ico.serious { background: var(--serious); }
+.ico.warning { background: var(--warning); color: #0b0b0b; }
+.ico.good { background: var(--good); }
+
+/* the baton (hero) */
+.baton { padding: 40px 0 34px; border-bottom: 1px solid var(--grid); }
+.eyebrow { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+.holder { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+.who { min-width: 0; }
+.who h1 { margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.who .sub { margin-top: 6px; color: var(--ink-2); font-size: 13.5px; display: flex; gap: 6px 14px; flex-wrap: wrap; }
+.hero { text-align: right; }
+.hero b { display: block; font-size: 64px; line-height: .95; font-weight: 650; letter-spacing: -.035em; }
+.hero span { display: block; margin-top: 8px; color: var(--ink-2); font-size: 13.5px; }
+.plan { font-size: 11.5px; font-weight: 650; color: var(--ink-2); border: 1px solid var(--grid); padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+
+.track { position: relative; height: 14px; margin: 34px 0 10px; }
+.track .rail { position: absolute; inset: 6px 0; height: 2px; background: var(--grid); border-radius: 2px; }
+.track .zone { position: absolute; top: -8px; bottom: -8px; right: 0; background: var(--zone); border-left: 1px solid var(--axis); }
+.track .zone i { position: absolute; top: -20px; right: 0; font-style: normal; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.track .fill { position: absolute; left: 0; top: 5px; height: 4px; border-radius: 4px; transition: width .6s ease; }
+.track .stick { position: absolute; top: 0; width: 26px; height: 14px; margin-left: -26px; border-radius: 7px; box-shadow: 0 0 0 3px var(--page); transition: left .6s ease; }
+.ticks { position: relative; height: 16px; font-size: 11.5px; color: var(--muted); }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.ticks span:first-child { transform: none; }
+.facts { display: flex; gap: 10px 28px; flex-wrap: wrap; margin-top: 18px; font-size: 13.5px; color: var(--ink-2); }
+.facts b { color: var(--ink); font-weight: 600; }
+
+/* stat tiles */
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--grid); }
+.kpi { padding: 26px 22px 26px 0; min-width: 0; }
+.kpi + .kpi { padding-left: 22px; border-left: 1px solid var(--grid); }
+.kpi .label { font-size: 12.5px; color: var(--muted); }
+.kpi .value { font-size: 30px; font-weight: 650; letter-spacing: -.025em; margin-top: 6px; line-height: 1.1; }
+.kpi .detail { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; display: flex; gap: 6px; align-items: baseline; }
+
+/* sections */
+section.block { padding: 34px 0; border-bottom: 1px solid var(--grid); }
+.block-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.block-head h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.block-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.key { width: 14px; height: 6px; border-radius: 3px; display: inline-block; }
+.key.ghost { opacity: .4; }
+
+#relay { width: 100%; position: relative; }
+#relay svg { display: block; width: 100%; overflow: visible; }
+#relay text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
+#relay text.small { font-size: 11px; fill: var(--muted); }
+#relay .hit { cursor: default; outline: none; }
+#relay .hit:focus-visible { stroke: var(--ink); stroke-width: 1.5px; }
+details.table { margin-top: 14px; font-size: 13px; }
+details.table summary { cursor: pointer; color: var(--muted); }
+details.table table { margin-top: 10px; border-collapse: collapse; width: 100%; max-width: 640px; }
+details.table td, details.table th { text-align: left; padding: 5px 12px 5px 0; border-bottom: 1px solid var(--grid); font-weight: 400; }
+details.table th { color: var(--muted); font-size: 12px; }
+
+/* lanes */
+.lanes { display: grid; grid-template-columns: minmax(210px, 1.5fr) minmax(150px, 1.3fr) minmax(96px, .8fr) 70px 78px 80px 100px auto; gap: 0 4px; }
+.lanes > div { padding: 14px 10px 14px 0; border-bottom: 1px solid var(--grid); min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.lanes .h { padding-top: 0; padding-bottom: 10px; font-size: 12px; color: var(--muted); }
+.lanes .r { text-align: right; align-items: flex-end; }
+.lane-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lane-pos { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11.5px; font-weight: 700; color: var(--surface); }
+.lane-email { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane-sub { display: flex; gap: 8px; align-items: center; margin-top: 3px; padding-left: 32px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.tag { display: inline-flex; gap: 5px; align-items: center; font-size: 12px; color: var(--ink-2); }
+.tag .ico { width: 15px; height: 15px; font-size: 9.5px; transform: none; }
+.mini { position: relative; height: 6px; margin-top: 7px; }
+.mini .rail { position: absolute; inset: 2px 0; height: 2px; background: var(--grid); border-radius: 2px; }
+.mini .zone { position: absolute; top: -3px; bottom: -3px; right: 0; background: var(--zone); border-left: 1px solid var(--axis); }
+.mini .fill { position: absolute; left: 0; top: 1px; height: 4px; border-radius: 4px; }
+.mini-row { display: flex; justify-content: space-between; font-size: 13px; }
+.mini-row b { font-weight: 600; }
+.lane-actions { flex-direction: row !important; justify-content: flex-end !important; align-items: center !important; gap: 2px; padding-right: 0 !important; }
+.menu { position: relative; }
+.menu > summary { list-style: none; cursor: pointer; padding: 4px 8px; border-radius: 6px; color: var(--muted); font-size: 16px; line-height: 1; }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary:hover { color: var(--ink); }
+.menu .pop { position: absolute; right: 0; top: 30px; z-index: 5; background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 6px; min-width: 170px; box-shadow: 0 10px 30px rgba(0,0,0,.12); display: grid; }
+.menu .pop .btn { text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 6px; font-weight: 500; }
+.menu .pop .btn:hover { background: var(--surface-2); }
+.menu .pop .btn.danger { color: var(--critical); }
+
+/* rules + history */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; padding-top: 34px; }
+.split h2 { margin: 0 0 4px; font-size: 15px; font-weight: 650; }
+.rule { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
+.rule p { margin: 0; flex: 1 1 220px; min-width: 0; }
+.rule small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.switch { position: relative; width: 36px; height: 22px; flex: none; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--grid); transition: background .2s; pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
+.switch input:checked + span { background: var(--ink); }
+.switch input:checked + span::after { transform: translateX(14px); }
+.switch input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--grid); border-radius: 8px; padding: 2px; gap: 2px; flex: none; }
+.seg button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted); }
+.seg button.on { background: var(--ink); color: var(--surface); }
+.seg input { width: 54px; border: 0; background: none; text-align: center; font-size: 13px; font-weight: 600; padding: 4px 2px; border-radius: 6px; }
+.seg input:focus { outline: 1px solid var(--axis); }
+.events { list-style: none; margin: 8px 0 0; padding: 0; }
+.events li { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--grid); font-size: 13.5px; }
+.events time { color: var(--muted); font-size: 12.5px; }
+.events .k { display: inline-flex; align-items: baseline; gap: 8px; }
+.events .k .ico { width: 15px; height: 15px; font-size: 9.5px; transform: translateY(2px); }
+footer { margin-top: 36px; font-size: 12.5px; color: var(--muted); line-height: 1.8; }
+
+/* onboarding */
+.empty { padding: 44px 0 36px; max-width: 640px; }
+.empty h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: -.02em; }
+.steps { margin: 20px 0 24px; padding: 0; list-style: none; display: grid; gap: 12px; counter-reset: s; }
+.steps li { display: flex; gap: 12px; color: var(--ink-2); }
+.steps li::before { counter-increment: s; content: counter(s); flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--axis); display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--ink); }
+
+/* tooltip + dialog + toast */
+#tip { position: fixed; z-index: 20; pointer-events: none; background: var(--surface); border: 1px solid var(--grid); border-radius: 9px; padding: 8px 11px; font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,.14); opacity: 0; transition: opacity .12s; max-width: 280px; }
+#tip.show { opacity: 1; }
+#tip .v { font-weight: 650; color: var(--ink); }
+#tip .l { color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+#tip .l i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+dialog { border: 1px solid var(--grid); border-radius: 14px; padding: 0; width: min(480px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); box-shadow: 0 24px 60px rgba(0,0,0,.22); }
+dialog::backdrop { background: rgba(8,8,8,.42); }
+.dlg { padding: 22px; }
+.dlg h2 { font-size: 17px; margin: 0 0 6px; }
+.dlg p { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; }
+.field { display: grid; gap: 6px; margin: 14px 0; font-size: 13px; font-weight: 600; }
+.field input { border: 1px solid var(--grid); background: var(--page); padding: 9px 11px; border-radius: 8px; font-weight: 400; font-size: 14px; }
+.field input:focus { outline: 1px solid var(--ink); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.wait { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 10px; background: var(--surface-2); margin: 4px 0 14px; }
+.wait p { margin: 0; color: var(--ink); }
+.spin { width: 18px; height: 18px; flex: none; border: 2px solid var(--grid); border-top-color: var(--ink); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hint { font-size: 13px; color: var(--ink-2); background: var(--surface-2); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+.alt { border-top: 1px solid var(--grid); padding-top: 12px; font-size: 13px; color: var(--ink-2); }
+.alt .code-row { display: flex; gap: 8px; margin-top: 8px; }
+.alt .code-row input { flex: 1; min-width: 0; border: 1px solid var(--grid); background: var(--page); padding: 8px 10px; border-radius: 8px; }
+.result { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 10px; background: var(--surface-2); }
+.result p { margin: 0; color: var(--ink); }
+#toast { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 16px); opacity: 0; pointer-events: none; transition: all .2s; background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 10px; font-size: 13.5px; max-width: calc(100vw - 32px); z-index: 30; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.bad { background: var(--critical); color: #fff; }
+
+@media (max-width: 860px) {
+  .wrap { padding: 18px 16px 40px; }
+  .kpis { grid-template-columns: 1fr 1fr; }
+  .kpi { padding: 20px 14px 20px 0; }
+  .kpi + .kpi { padding-left: 14px; }
+  .kpi:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid var(--grid); }
+  .kpi:nth-child(4) { border-top: 1px solid var(--grid); }
+  .kpi .value { font-size: 24px; }
+  .hero { text-align: left; }
+  .hero b { font-size: 52px; }
+  .split { grid-template-columns: 1fr; gap: 28px; }
+  .lanes { grid-template-columns: 1fr 1fr; }
+  .lanes .h { display: none; }
+  .lanes > div { border-bottom: 0; padding: 4px 0; }
+  .lanes .c-name { grid-column: 1 / -1; padding-top: 16px; border-top: 1px solid var(--grid); }
+  .lanes .c-week, .lanes .c-five { grid-column: 1 / -1; }
+  .lanes .r { text-align: left; align-items: flex-start; }
+  .lanes .c-act { grid-column: 1 / -1; justify-content: flex-start !important; padding-bottom: 12px; }
+  .lanes [data-m]::before { content: attr(data-m); font-size: 11.5px; color: var(--muted); }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="mark">
+      <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="currentColor"/><rect x="7" y="13.5" width="18" height="5" rx="2.5" fill="var(--page)" transform="rotate(-30 16 16)"/></svg>
+      rodízio
+    </div>
+    <span class="state" id="state"><span class="dot"></span>conectando…</span>
+    <div class="actions">
+      <button class="btn" id="btn-refresh" title="Ler o uso de todas as contas agora">Atualizar</button>
+      <button class="btn solid" id="btn-connect">Conectar conta</button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+  <section id="baton"></section>
+  <section class="kpis" id="kpis" hidden></section>
+
+  <section class="block" id="relay-block" hidden>
+    <div class="block-head">
+      <div><h2>O revezamento</h2><p>Quem carregou o bastão nos últimos dias e quem carrega daqui para a frente, no ritmo atual.</p></div>
+      <div class="legend"><span><i class="key" style="background:var(--ink-2)"></i>com o bastão</span><span><i class="key ghost" style="background:var(--ink-2)"></i>previsão</span><span><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="var(--ink-2)"/></svg>semana renova</span></div>
+    </div>
+    <div id="relay"></div>
+    <details class="table" id="relay-table"><summary>Ver em tabela</summary><table><thead><tr><th>Conta</th><th>De</th><th>Até</th><th>Duração</th><th></th></tr></thead><tbody></tbody></table></details>
+  </section>
+
+  <section class="block" id="lanes-block" hidden>
+    <div class="block-head">
+      <div><h2>As raias</h2><p>A ordem da fila: o bastão vai para a primeira conta livre de cima para baixo.</p></div>
+    </div>
+    <div class="lanes" id="lanes"></div>
+  </section>
+
+  <div class="split" id="lower">
+    <section id="rules"></section>
+    <section><h2>Histórico</h2><p class="muted" style="margin:0;font-size:13px">Trocas, contas e avisos.</p><ol class="events" id="events"></ol></section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<dialog id="dlg"><div class="dlg" id="dlg-body"></div></dialog>
+<div id="tip" role="tooltip"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+const TOKEN_KEY = 'rodizio-token';
+// The access key arrives in the address `rodizio painel` opens (#t=…) and stays in this browser.
+let TOKEN = (() => {
+  const m = /[#&]t=([A-Za-z0-9_-]{32,})/.exec(location.hash);
+  try {
+    if (m) {
+      localStorage.setItem(TOKEN_KEY, m[1]);
+      history.replaceState(null, '', location.pathname);
+      return m[1];
+    }
+    return localStorage.getItem(TOKEN_KEY) || '';
+  } catch {
+    return m ? m[1] : '';
+  }
+})();
+// An already open tab that gets a new address (#t=…) only sees a hash change: start over with it.
+window.addEventListener('hashchange', () => { if (/[#&]t=/.test(location.hash)) location.reload(); });
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const H = 3600, D = 86400;
+
+let S = null, skew = 0, job = null, busy = false;
+
+async function api(method, path, body) {
+  const r = await fetch(path, {
+    method,
+    headers: { 'X-Rodizio-Token': TOKEN, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 403 && j.erro === 'token inválido') {
+    try { localStorage.removeItem(TOKEN_KEY); } catch {}
+    TOKEN = '';
+  }
+  if (!r.ok) throw new Error(j.erro || `erro ${r.status}`);
+  return j;
+}
+
+// ------------------------------------------------------------------ formatting
+
+const now = () => Date.now() / 1000 + skew;
+/** Whole numbers from 10 up, one decimal below (none when whole). */
+function pct(p) {
+  if (p === null || p === undefined) return '—';
+  const r = Math.round(p * 10) / 10;
+  return `${r >= 10 || Number.isInteger(r) ? Math.round(r) : String(r).replace('.', ',')}%`;
+}
+const dec = (n, d = 1) => n.toLocaleString('pt-BR', { maximumFractionDigits: d, minimumFractionDigits: 0 });
+const money = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const moneyShort = (v) => (v >= 100 ? money.format(Math.round(v)).replace(/,00$/, '') : money.format(v));
+const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
+function span(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const d = Math.floor(sec / D), h = Math.floor((sec % D) / H), m = Math.floor((sec % H) / 60);
+  if (d) return h ? `${d}d ${h}h` : `${d}d`;
+  if (h) return m ? `${h}h ${m}min` : `${h}h`;
+  if (m) return `${m} min`;
+  return 'menos de 1 min';
+}
+const hours = (h) => (h >= 48 ? `${dec(h / 24)} dias` : `${Math.round(h)} h`);
+const ago = (t) => (!t ? '' : now() - t < 60 ? 'agora há pouco' : `há ${span(now() - t)}`);
+const dayFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+const timeFmt = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const fullFmt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+const tickFmt = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: 'numeric' });
+const clean = (s) => s.replace(/\./g, '');
+const when = (t) => clean(dayFmt.format(new Date(t * 1000)));
+const dateFmt = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short' });
+const whenRel = (t) => {
+  const d = new Date(t * 1000), n = new Date(now() * 1000);
+  const same = d.toDateString() === n.toDateString();
+  const yest = new Date(n); yest.setDate(n.getDate() - 1);
+  if (same) return `hoje ${timeFmt.format(d)}`;
+  if (d.toDateString() === yest.toDateString()) return `ontem ${timeFmt.format(d)}`;
+  // within a week ahead or behind, the weekday says it; further out, the date
+  return Math.abs(t - now()) < 6 * D ? when(t) : `${clean(dateFmt.format(d)).replace(' de ', ' ')} ${timeFmt.format(d)}`;
+};
+const local = (email) => String(email ?? '').split('@')[0];
+/** Countdowns and "how long ago" that a one-second clock keeps current (see tickClocks). */
+const until = (t) => `<span data-until="${Number(t)}">${esc(span(t - now()))}</span>`;
+const since = (t) => `<span data-since="${Number(t)}">${esc(ago(t))}</span>`;
+function tickClocks() {
+  for (const el of document.querySelectorAll('[data-until]')) el.textContent = span(Number(el.dataset.until) - now());
+  for (const el of document.querySelectorAll('[data-since]')) el.textContent = ago(Number(el.dataset.since));
+}
+setInterval(tickClocks, 1000);
+const color = (a) => `var(--s${a?.slot ?? 0})`;
+const STATUS = {
+  ativa: ['', 'com o bastão'],
+  livre: ['', 'na fila'],
+  esgotada: ['serious', 'na zona de passagem'],
+  zona_5h: ['warning', 'janela de 5 h na zona'],
+  pausada: ['', 'fora da fila'],
+  sem_leitura: ['', 'sem leitura ainda'],
+  precisa_login: ['critical', 'precisa entrar de novo'],
+};
+const ICON = { critical: '!', serious: '▲', warning: '!', good: '✓' };
+const icon = (k) => (k ? `<span class="ico ${k}" aria-hidden="true">${ICON[k]}</span>` : '');
+const SOURCE = { api: 'pela API', 'linha de status': 'pela linha de status' };
+
+// ------------------------------------------------------------------ render
+
+function render() {
+  if (!S) return;
+  // An agent started before this page version has no metrics yet: show the accounts without them.
+  const has = S.accounts.length > 0 && !!S.rotation;
+  S.timeline ??= [];
+  renderBanner();
+  renderBaton();
+  $('kpis').hidden = !has;
+  $('relay-block').hidden = !has;
+  $('lanes-block').hidden = !has;
+  if (has) { renderKpis(); renderRelay(); renderLanes(); }
+  if (!$('rules').contains(document.activeElement)) renderRules();
+  renderEvents();
+  $('foot').innerHTML = `Logins no Keychain deste Mac · estado em <code>${esc(S.home)}</code> · painel só em <code>127.0.0.1:${S.port}</code><br>
+    Nada sai daqui além das chamadas oficiais à Anthropic: o login, a conferência de qual conta está em uso${S.config.useApi ? ' e a leitura de uso' : ''}.`;
+  if (job) {
+    // the live state carries the login too: no need to wait for the dialog's own polling
+    const fresh = S.jobs?.find((j) => j.id === job.id);
+    if (fresh) job = fresh;
+    renderJob();
+  }
+}
+
+/** The agent version this page was written for (API_VERSION in src/core.mjs). */
+const PAGE_API = 3;
+
+function renderBanner() {
+  const b = [];
+  if ((S.api ?? 0) < PAGE_API) b.push(['critical', 'O agente que está rodando é de uma versão anterior a este painel: algumas regras novas não ficam salvas. Rode <code>rodizio doctor --reparar</code> para reiniciá-lo.', '']);
+  if (S.mainPending) {
+    b.push(['warning', 'Conferindo com a Anthropic de quem é o login que está no Claude Code agora. Sem essa resposta (sem internet, ou token vencido até a próxima mensagem no Claude Code), nenhuma troca acontece.', '']);
+  } else if (S.accounts.length && !S.active) {
+    if (S.mainEmail) b.push(['warning', `O Claude Code está em <b>${esc(S.mainEmail)}</b>, que ainda não está no rodízio. Adicione essa conta (um clique, sem login) para o rodízio cuidar dela.`, `<button class="btn solid" data-act="adopt">Adicionar ${esc(S.mainEmail)}</button>`]);
+    else b.push(['warning', 'O Claude Code está sem login. Escolha uma conta nas raias e use <b>Passar o bastão</b>.', '']);
+  }
+  if (S.exhausted) b.push(['critical', 'Nenhuma conta tem folga agora. O rodízio fica na conta atual até alguma janela renovar.', '']);
+  if (S.decision?.kind === 'throttled') b.push(['critical', `Foram ${S.decision.count} trocas automáticas na última hora. Segurei as próximas até a hora passar; confira se alguma leitura está estranha.`, '']);
+  if (S.decision?.kind === 'wait') b.push(['warning', `A janela de 5 h da conta em uso renova ${esc(whenRel(S.decision.until))}: espero em vez de gastar outra conta por tão pouco.`, '']);
+  if (S.handover?.stuck) b.push(['warning', 'Uma sessão aberta ainda responde pela conta anterior. Se ela travar no limite, feche essa sessão e abra de novo: as novas já entram na conta com o bastão.', '']);
+  $('banner').innerHTML = b.map(([k, text, action]) => `<div class="banner"><p>${icon(k)}<span>${text}</span></p>${action}</div>`).join('');
+}
+
+function trackHtml(w, trigger, a, cls = 'track') {
+  const p = w?.pct ?? null;
+  const fillW = p === null ? 0 : Math.min(100, p);
+  return `<div class="${cls}" role="img" aria-label="${p === null ? 'sem leitura' : pct(p) + ' da semana usada'}">
+    <div class="rail"></div>
+    <div class="zone" style="left:${trigger}%">${cls === 'track' ? '<i>zona de passagem</i>' : ''}</div>
+    <div class="fill" style="width:${fillW}%;background:${color(a)}"></div>
+    ${cls === 'track' && p !== null ? `<div class="stick" style="left:${Math.max(2.4, fillW)}%;background:${color(a)}"></div>` : ''}
+  </div>`;
+}
+
+function renderBaton() {
+  const el = $('baton');
+  if (!S.accounts.length) {
+    el.className = 'empty';
+    const mine = S.mainEmail;
+    el.innerHTML = `<p class="eyebrow">Vamos montar o rodízio</p><h1>Cada conta vira uma raia. A que está em uso carrega o bastão.</h1>
+      <p class="ink2">Os logins ficam no Keychain deste Mac, nas entradas que o próprio Claude Code cria.</p>
+      <ol class="steps">
+        <li><span>${mine ? `Adicione <b>${esc(mine)}</b>, que já está no Claude Code: um clique, sem login nem código.` : 'Conecte a primeira conta.'}</span></li>
+        <li><span>Conecte as outras. Cada uma faz o login oficial da Anthropic uma vez, numa janela anônima, para não cair na conta errada.</span></li>
+        <li><span>Quando faltar ${pct(S.config.remainingPct)} da semana, a conta entra na zona de passagem e o bastão vai para a próxima.</span></li>
+      </ol>
+      <div class="actions">${mine ? `<button class="btn solid" data-act="adopt">Adicionar ${esc(mine)}</button><button class="btn" data-act="connect">Conectar outra conta</button>`
+        : '<button class="btn solid" data-act="connect">Conectar a primeira conta</button>'}</div>`;
+    return;
+  }
+  const a = S.accounts.find((x) => x.active);
+  el.className = 'baton';
+  if (!a) {
+    el.innerHTML = `<p class="eyebrow">Com o bastão</p><div class="who"><h1 class="muted">ninguém do rodízio</h1><div class="sub">${S.mainEmail ? `O Claude Code está em ${esc(S.mainEmail)}.` : 'O Claude Code está sem login.'}</div></div>`;
+    return;
+  }
+  const w = a.weekly, f = a.fiveHour;
+  const known = w && w.pct !== null;
+  const next = S.accounts.find((x) => x.next);
+  const facts = [];
+  if (a.ratePctPerHour !== null && a.ratePctPerHour !== undefined) facts.push(`ritmo <b>${dec(a.ratePctPerHour)}%/h</b>`);
+  if (a.etaToTrigger) facts.push(`chega na zona <b>${esc(whenRel(a.etaToTrigger))}</b> (em ${until(a.etaToTrigger)})`);
+  else if (known && a.ratePctPerHour === null) facts.push('ritmo: medindo (precisa de ~1 h de uso)');
+  facts.push(`5 h <b>${f?.pct != null ? pct(f.pct) : '—'}</b>${S.config.fiveHourSwitch ? ` de ${S.trigger5}%` : ''}${a.etaToTrigger5 ? ` · na zona em ${until(a.etaToTrigger5)}` : ''}${f?.resetsAt ? ` · renova ${esc(timeFmt.format(new Date(f.resetsAt * 1000)))}` : ''}`);
+  if (a.opus?.pct != null) facts.push(`Opus na semana <b>${pct(a.opus.pct)}</b>`);
+  if (a.sonnet?.pct != null) facts.push(`Sonnet na semana <b>${pct(a.sonnet.pct)}</b>`);
+  facts.push(next ? `próxima: <b>${esc(local(next.email))}</b>${next.weekly?.pct != null ? ` (${pct(next.weekly.pct)})` : ''}` : 'nenhuma conta livre para a próxima troca');
+  el.innerHTML = `<p class="eyebrow"><span class="dot" style="background:${color(a)}"></span>Com o bastão${S.pinned ? ' · escolhida à mão' : ''}</p>
+    <div class="holder">
+      <div class="who"><h1>${esc(a.email)}</h1>
+        <div class="sub">${a.plan ? `<span class="plan">${esc(a.plan)}</span>` : ''}
+          ${S.activeSince ? `<span>desde ${esc(whenRel(S.activeSince))}</span>` : ''}
+          ${a.usageAt ? `<span>lido ${since(a.usageAt)} ${esc(SOURCE[a.usageSource] ?? '')}</span>` : ''}</div></div>
+      <div class="hero">${known ? `<b>${pct(w.pct)}</b><span>da semana · faltam ${pct(Math.max(0, S.trigger - w.pct))} até a zona${w.resetsAt ? ` · renova ${esc(when(w.resetsAt))}` : ''}</span>`
+        : `<b class="muted">—</b><span>a primeira leitura chega com a próxima resposta do Claude</span>`}</div>
+    </div>
+    ${trackHtml(w, S.trigger, a)}
+    <div class="ticks"><span style="left:0">0</span><span style="left:25%">25</span><span style="left:50%">50</span><span style="left:75%">75</span><span style="left:${S.trigger}%">${S.trigger}</span></div>
+    <div class="facts">${facts.map((x) => `<span>${x}</span>`).join('')}</div>`;
+}
+
+function renderKpis() {
+  const r = S.rotation, fc = S.forecast, t = S.today, l = S.live, wk = S.week;
+  let fuelValue, fuelDetail;
+  if (r.hoursLeft !== null && r.hoursLeft !== undefined) {
+    fuelValue = `≈ ${hours(r.hoursLeft)}`;
+    if (fc?.gapAt) fuelDetail = `${icon('critical')}<span>acaba ${esc(whenRel(fc.gapAt))}${fc.gapUntil ? `; volta ${esc(whenRel(fc.gapUntil))}` : ''}</span>`;
+    else if (fc) fuelDetail = `${icon('good')}<span>${pct(r.leftShare * 100)} da capacidade · com as renovações da semana, cobre os próximos 3 dias</span>`;
+    else fuelDetail = `<span>${pct(r.leftShare * 100)} da capacidade semanal</span>`;
+  } else {
+    fuelValue = r.leftShare !== null ? pct(r.leftShare * 100) : '—';
+    fuelDetail = '<span>da capacidade semanal · o ritmo aparece depois de ~1 h de uso</span>';
+  }
+  const tokens = t.tokensIn + t.tokensOut;
+  const tiles = [
+    ['Fôlego do rodízio', fuelValue, fuelDetail, 'Até a zona de passagem de todas as contas da fila, no ritmo das últimas horas. A 20x conta como quatro 5x.'],
+    ['Hoje', t.cost > 0 ? moneyShort(t.cost) : 'US$ 0', tokens > 0 ? `<span>${compact.format(tokens)} tokens · +${compact.format(t.linesAdded)} −${compact.format(t.linesRemoved)} linhas</span>` : '<span>nenhuma resposta registrada hoje</span>', 'Custo equivalente na API, somado das sessões interativas pela linha de status.'],
+    ['Agora', l.sessions ? `${l.sessions} ${l.sessions === 1 ? 'sessão' : 'sessões'}` : 'nenhuma', l.sessions ? `<span>${esc(l.models.join(', ') || 'modelo desconhecido')}${l.maxContext ? ` · contexto até ${pct(l.maxContext)}` : ''}</span>` : '<span>sessão aberta do Claude Code</span>', 'Sessões que responderam nos últimos 3 minutos.'],
+    ['Nos últimos 7 dias', `${wk.switches} ${wk.switches === 1 ? 'troca' : 'trocas'}`, `<span>${wk.lastSwitchAt ? `última ${esc(whenRel(wk.lastSwitchAt))}` : 'nenhuma troca ainda'}${batonShare()}</span>`, ''],
+  ];
+  $('kpis').innerHTML = tiles.map(([label, value, detail, tip]) => `<div class="kpi"${tip ? ` data-tip="${esc(tip)}"` : ''}><div class="label">${label}</div><div class="value">${value}</div><div class="detail">${detail}</div></div>`).join('');
+}
+
+function batonShare() {
+  const total = S.accounts.reduce((s, a) => s + (a.batonWeekS || 0), 0);
+  if (!total) return '';
+  const top = [...S.accounts].sort((x, y) => y.batonWeekS - x.batonWeekS)[0];
+  return ` · ${esc(local(top.email))} com o bastão ${pct((top.batonWeekS / total) * 100)} do tempo`;
+}
+
+// --- the relay chart (SVG built with DOM calls: labels are data, never HTML)
+const NS = 'http://www.w3.org/2000/svg';
+function el(name, attrs = {}, parent) {
+  const n = document.createElementNS(NS, name);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent, x, y, s, attrs = {}) {
+  const n = el('text', { x, y, ...attrs }, parent);
+  n.textContent = s;
+  return n;
+}
+
+function renderRelay() {
+  const box = $('relay');
+  const W = Math.max(320, box.clientWidth);
+  const narrow = W < 620;
+  const labelW = narrow ? 86 : 150;
+  const rowH = 32, top = 26, axisH = 30;
+  const accs = S.accounts;
+  const height = top + accs.length * rowH + axisH;
+  const t0 = S.now - (narrow ? 3 : 4) * D, t1 = S.now + (narrow ? 2 : 3) * D;
+  const plotW = W - labelW - 6;
+  const x = (t) => labelW + ((Math.min(t1, Math.max(t0, t)) - t0) / (t1 - t0)) * plotW;
+  const rowY = (i) => top + i * rowH + rowH / 2;
+  const svg = el('svg', { viewBox: `0 0 ${W} ${height}`, height, role: 'img', 'aria-label': 'Linha do tempo de quem carregou o bastão e previsão' });
+
+  // future band
+  el('rect', { x: x(S.now), y: top - 6, width: x(t1) - x(S.now), height: accs.length * rowH + 12, fill: 'var(--future)', rx: 6 }, svg);
+  // One label for the first gap (the others are shaded the same and listed in the table), and "previsão" only where
+  // it does not collide with it.
+  const firstGap = (S.forecast?.segments ?? []).find((g) => g.id === null && g.to > t0 && g.from < t1);
+  const gapLabelAt = firstGap ? x(firstGap.from) : null;
+  if (!narrow && (gapLabelAt === null || gapLabelAt < x(t1) - 170)) txt(svg, x(t1) - 4, top - 12, 'previsão', { class: 'small', 'text-anchor': 'end' });
+
+  // days
+  const d0 = new Date(t0 * 1000); d0.setHours(0, 0, 0, 0);
+  for (let d = new Date(d0); d.getTime() / 1000 <= t1; d.setDate(d.getDate() + 1)) {
+    const t = d.getTime() / 1000;
+    if (t < t0) continue;
+    el('line', { x1: x(t), x2: x(t), y1: top - 6, y2: top + accs.length * rowH + 6, stroke: 'var(--grid)', 'stroke-width': 1 }, svg);
+    const noon = t + 12 * H;
+    if (noon < t1 && noon > t0) txt(svg, x(noon), top + accs.length * rowH + 22, clean(tickFmt.format(d)).replace(',', ''), { class: 'small', 'text-anchor': 'middle' });
+  }
+
+  // gaps: nobody left to carry the baton
+  for (const s of S.forecast?.segments ?? []) {
+    if (s.id !== null) continue;
+    const g = el('rect', { x: x(s.from), y: top - 6, width: Math.max(2, x(s.to) - x(s.from)), height: accs.length * rowH + 12, fill: 'var(--critical)', 'fill-opacity': .1, class: 'hit', tabindex: 0 }, svg);
+    g.dataset.tip = JSON.stringify({ v: 'Sem conta livre', l: `${whenRel(s.from)} → ${whenRel(s.to)} · ${span(s.to - s.from)}` });
+    if (s === firstGap) {
+      const fits = x(s.from) + 84 < W;
+      txt(svg, fits ? x(s.from) + 4 : W - 2, top - 12, '! sem fôlego', { class: 'small', 'text-anchor': fits ? 'start' : 'end' }).style.fill = 'var(--critical)';
+    }
+  }
+
+  accs.forEach((a, i) => {
+    const y = rowY(i);
+    el('line', { x1: labelW, x2: labelW + plotW, y1: y, y2: y, stroke: 'var(--grid)', 'stroke-width': 1 }, svg);
+    el('circle', { cx: 6, cy: y, r: 4, fill: color(a) }, svg);
+    const name = local(a.email);
+    txt(svg, 16, y + 4, narrow && name.length > 9 ? name.slice(0, 8) + '…' : name);
+    const seg = (from, to, ghost) => {
+      if (to <= t0 || from >= t1) return;
+      const xa = x(from), xb = x(to);
+      const r = el('rect', { x: xa, y: y - 6, width: Math.max(4, xb - xa), height: 12, rx: 4, fill: color(a), 'fill-opacity': ghost ? .38 : 1, class: 'hit', tabindex: 0 }, svg);
+      r.dataset.tip = JSON.stringify({ v: `${span(to - from)} com o bastão${ghost ? ' (previsão)' : ''}`, l: `${whenRel(from)} → ${whenRel(to)}`, c: color(a), n: a.email });
+    };
+    for (const s of S.timeline) if (s.id === a.id) seg(s.from, Math.min(s.to, S.now), false);
+    for (const s of S.forecast?.segments ?? []) if (s.id === a.id) seg(Math.max(s.from, S.now), s.to, true);
+    // week resets inside the window
+    const r0 = a.weekly?.resetsAt;
+    for (let r = r0; r && r < t1; r += 7 * D) {
+      if (r < t0) continue;
+      const dmd = el('path', { d: `M${x(r)} ${y - 6} l6 6 -6 6 -6 -6Z`, fill: 'var(--ink)', stroke: 'var(--page)', 'stroke-width': 2, class: 'hit', tabindex: 0 }, svg);
+      dmd.dataset.tip = JSON.stringify({ v: 'A semana renova', l: when(r), c: color(a), n: a.email });
+    }
+  });
+
+  // now
+  const xn = x(S.now);
+  el('line', { x1: xn, x2: xn, y1: top - 10, y2: top + accs.length * rowH + 8, stroke: 'var(--ink)', 'stroke-width': 1.5 }, svg);
+  txt(svg, xn, top - 12, 'agora', { 'text-anchor': 'middle', class: 'small' }).style.fill = 'var(--ink)';
+
+  box.replaceChildren(svg);
+  renderRelayTable();
+}
+
+function renderRelayTable() {
+  const rows = [];
+  const byId = Object.fromEntries(S.accounts.map((a) => [a.id, a]));
+  for (const s of S.timeline) rows.push([byId[s.id]?.email ?? 'conta removida', s.from, Math.min(s.to, S.now), 'real']);
+  for (const s of S.forecast?.segments ?? []) rows.push([s.id ? byId[s.id]?.email ?? '' : 'sem conta livre', Math.max(s.from, S.now), s.to, 'previsão']);
+  rows.sort((p, q) => p[1] - q[1]);
+  const tb = document.querySelector('#relay-table tbody');
+  tb.replaceChildren(...rows.filter((r) => r[2] > r[1]).map(([who, from, to, kind]) => {
+    const tr = document.createElement('tr');
+    for (const v of [who, whenRel(from), whenRel(to), span(to - from), kind]) { const td = document.createElement('td'); td.textContent = v; tr.appendChild(td); }
+    return tr;
+  }));
+}
+
+function renderLanes() {
+  const head = ['Conta', 'Semana', '5 h', 'Ritmo', 'Bastão 7d', 'Custo 7d', 'Renova', ''];
+  const right = (i) => i >= 3 && i <= 6 || (i === 2 && !S.config.fiveHourSwitch);
+  const cells = head.map((h, i) => `<div class="h${right(i) ? ' r' : ''}">${h}</div>`);
+  S.accounts.forEach((a, i) => {
+    const [stK, stText] = a.next && a.status === 'livre' ? ['', 'próxima'] : STATUS[a.status] ?? ['', a.status];
+    const w = a.weekly, f = a.fiveHour;
+    const note = a.status === 'precisa_login' ? 'o login guardado não vale mais'
+      : w?.pct === 0 && !w.resetsAt ? 'semana ainda não começou'
+      : a.usageAt ? `lido <span data-since="${a.usageAt}">${esc(ago(a.usageAt))}</span>` : a.apiStatus === 'token_parado' ? 'lê quando entrar em uso' : 'sem leitura ainda';
+    cells.push(
+      `<div class="c-name"><div class="lane-name"><span class="lane-pos" style="background:${color(a)}">${a.position}</span><span class="lane-email" title="${esc(a.email)}">${esc(a.email)}</span></div>
+        <div class="lane-sub">${a.plan ? `<span class="plan">${esc(a.plan)}</span>` : ''}<span class="tag">${icon(stK)}${esc(stText)}</span><span>${note}</span></div></div>`,
+      `<div class="c-week" data-m="Semana"><div class="mini-row"><span class="muted">${w?.pct == null ? '' : w.pct >= S.trigger ? 'na zona' : 'faltam ' + pct(S.trigger - w.pct)}</span><b class="num">${w?.pct != null ? pct(w.pct) : '—'}</b></div>${trackHtml(w, S.trigger, a, 'mini')}
+        ${a.opus?.pct != null || a.sonnet?.pct != null ? `<div class="muted" style="font-size:12px;margin-top:4px">${a.opus?.pct != null ? `Opus ${pct(a.opus.pct)}` : ''}${a.opus?.pct != null && a.sonnet?.pct != null ? ' · ' : ''}${a.sonnet?.pct != null ? `Sonnet ${pct(a.sonnet.pct)}` : ''}</div>` : ''}</div>`,
+      S.config.fiveHourSwitch
+        ? `<div class="c-five" data-m="5 h"><div class="mini-row"><span class="muted">${f?.resetsAt ? esc(timeFmt.format(new Date(f.resetsAt * 1000))) : f?.pct === 0 ? 'livre' : ''}</span><b class="num">${f?.pct != null ? pct(f.pct) : '—'}</b></div>${trackHtml(f, S.trigger5, a, 'mini')}</div>`
+        : `<div class="r num" data-m="5 h">${f?.pct != null ? pct(f.pct) : '—'}</div>`,
+      `<div class="r num" data-m="Ritmo">${a.ratePctPerHour ? `${dec(a.ratePctPerHour)}%/h` : '<span class="muted">parada</span>'}</div>`,
+      `<div class="r num" data-m="Bastão 7d">${a.batonWeekS ? span(a.batonWeekS) : '<span class="muted">—</span>'}</div>`,
+      `<div class="r num" data-m="Custo 7d">${a.week?.cost ? moneyShort(a.week.cost) : '<span class="muted">—</span>'}</div>`,
+      `<div class="r" data-m="Renova">${w?.resetsAt ? esc(when(w.resetsAt)) : w?.pct === 0 ? '<span class="muted">no 1º uso</span>' : '<span class="muted">—</span>'}</div>`,
+      `<div class="lane-actions c-act">
+        ${!a.active && a.status !== 'precisa_login' ? `<button class="btn" data-act="use" data-id="${a.id}">Passar o bastão</button>` : ''}
+        ${a.status === 'precisa_login' ? `<button class="btn solid" data-act="reconnect" data-id="${a.id}">Reconectar</button>` : ''}
+        <button class="btn bare" data-act="up" data-id="${a.id}" ${i === 0 ? 'disabled' : ''} aria-label="Subir na fila" title="Subir na fila">↑</button>
+        <button class="btn bare" data-act="down" data-id="${a.id}" ${i === S.accounts.length - 1 ? 'disabled' : ''} aria-label="Descer na fila" title="Descer na fila">↓</button>
+        <details class="menu"><summary aria-label="Mais ações">⋯</summary><div class="pop">
+          ${a.active ? '' : `<button class="btn" data-act="pause" data-id="${a.id}" data-paused="${a.paused ? 0 : 1}">${a.paused ? 'Voltar para a fila' : 'Tirar da fila'}</button>`}
+          <button class="btn" data-act="reconnect" data-id="${a.id}">Reconectar</button>
+          ${a.active ? '' : `<button class="btn danger" data-act="remove" data-id="${a.id}" data-email="${esc(a.email)}">Remover do rodízio</button>`}
+        </div></details>
+      </div>`,
+    );
+  });
+  $('lanes').innerHTML = cells.join('');
+}
+
+function toggle(key, title, help) {
+  return `<div class="rule"><p>${title}${help ? `<small>${help}</small>` : ''}</p>
+    <label class="switch"><input type="checkbox" data-cfg="${key}" ${S.config[key] ? 'checked' : ''} aria-label="${esc(title)}"><span></span></label></div>`;
+}
+
+function marginControl(key, label) {
+  const v = S.config[key];
+  const custom = v !== 5 && v !== 3;
+  return `<div class="seg" role="group" aria-label="${esc(label)}">
+    <button data-margin="5" data-key="${key}" class="${v === 5 ? 'on' : ''}">5%</button>
+    <button data-margin="3" data-key="${key}" class="${v === 3 ? 'on' : ''}">3%</button>
+    <input class="margin-custom" data-key="${key}" inputmode="decimal" placeholder="outro" aria-label="${esc(label)}: outra margem em %" value="${custom ? esc(String(v).replace('.', ',')) : ''}">
+  </div>`;
+}
+
+function renderRules() {
+  const c = S.config;
+  $('rules').innerHTML = `<h2>Regras</h2><p class="muted" style="margin:0;font-size:13px">Valem na hora; ficam salvas neste Mac.</p>
+    <div class="rule"><p>Zona de passagem da semana<small>Com ${pct(c.remainingPct)}, o bastão passa quando a conta chega a ${S.trigger}% da semana.</small></p>
+      ${marginControl('remainingPct', 'Margem da semana')}</div>
+    ${toggle('fiveHourSwitch', 'Trocar também na janela de 5 h', 'Quando a janela de 5 h da conta em uso chega na zona, outra conta cobre até ela renovar. Se a janela renova em menos de 5 minutos, ele espera.')}
+    ${c.fiveHourSwitch ? `<div class="rule"><p>Zona de passagem da janela de 5 h<small>Com ${pct(c.fiveHourRemainingPct)}, o bastão passa em ${S.trigger5}% da janela.</small></p>
+      ${marginControl('fiveHourRemainingPct', 'Margem da janela de 5 h')}</div>` : ''}
+    ${toggle('auto', 'Troca automática', 'Passa o bastão sozinho na zona de passagem.')}
+    ${toggle('returnToPreferred', 'Voltar para a preferida', 'Quando a primeira da fila tem folga de novo nas duas janelas, o bastão volta para ela. Uma escolha à mão fica até a zona.')}
+    ${toggle('notify', 'Avisar no Mac', 'Notificação com som a cada troca.')}
+    ${toggle('useApi', 'Ler o uso na Anthropic', 'No mesmo endereço do /usage, com o token de cada conta. Desligado: só a linha de status mede.')}
+    ${c.useApi ? toggle('pollParked', 'Ler também as contas paradas', 'A cada 15 minutos, para a fila saber quem ainda tem saldo.') : ''}
+    ${toggle('incognitoLogin', 'Login em janela anônima', 'Abre o login no Brave (ou Chrome) anônimo, para não cair na conta aberta no navegador.')}`;
+}
+
+const EVT = { troca: '', conta: '', erro: 'critical', alerta: 'critical', aviso: 'warning', info: '' };
+function renderEvents() {
+  const ev = S.events.slice(0, 14);
+  $('events').innerHTML = ev.length
+    ? ev.map((e) => `<li><time>${esc(whenRel(e.at))}</time><span class="k">${icon(EVT[e.kind])}<span>${esc(e.text)}</span></span></li>`).join('')
+    : '<li><time></time><span class="muted">Nada ainda. A primeira conta conectada aparece aqui.</span></li>';
+}
+
+// ------------------------------------------------------------------ tooltip
+
+const tip = $('tip');
+function showTip(target, cx, cy) {
+  let d;
+  try { d = JSON.parse(target.dataset.tip); } catch { d = { l: target.dataset.tip }; }
+  tip.replaceChildren();
+  if (d.v) { const v = document.createElement('div'); v.className = 'v'; v.textContent = d.v; tip.appendChild(v); }
+  if (d.n) { const n = document.createElement('div'); n.className = 'l'; const k = document.createElement('i'); k.style.background = d.c; n.append(k, document.createTextNode(d.n)); tip.appendChild(n); }
+  if (d.l) { const l = document.createElement('div'); l.className = 'l'; l.textContent = d.l; tip.appendChild(l); }
+  tip.className = 'show';
+  const r = tip.getBoundingClientRect();
+  tip.style.left = `${Math.min(window.innerWidth - r.width - 8, Math.max(8, cx + 12))}px`;
+  tip.style.top = `${Math.max(8, cy - r.height - 12)}px`;
+}
+document.addEventListener('pointermove', (e) => {
+  const t = e.target.closest?.('[data-tip]');
+  if (t) showTip(t, e.clientX, e.clientY); else tip.className = '';
+});
+document.addEventListener('focusin', (e) => {
+  const t = e.target.closest?.('[data-tip]');
+  if (!t) return;
+  const r = t.getBoundingClientRect();
+  showTip(t, r.left + r.width / 2, r.top);
+});
+document.addEventListener('focusout', () => (tip.className = ''));
+
+// ------------------------------------------------------------------ login dialog
+
+function openConnect(email = '', reconnect = null) {
+  job = null;
+  $('dlg-body').dataset.sig = '';
+  const acc = reconnect && S.accounts.find((a) => a.id === reconnect);
+  $('dlg-body').innerHTML = `<h2>${acc ? `Reconectar ${esc(acc.email)}` : 'Conectar uma conta'}</h2>
+    <p>Abre o login oficial da Anthropic${S.config.incognitoLogin ? ' numa janela anônima' : ''}. Entre na conta${acc ? '' : ' que quer pôr no rodízio'} e autorize o Claude Code.</p>
+    ${acc ? '' : `<label class="field">E-mail da conta <span class="muted" style="font-weight:400">(opcional, já preenche a página)</span>
+      <input id="f-email" type="email" autocomplete="off" placeholder="voce@exemplo.com" value="${esc(email)}"></label>`}
+    <div class="dlg-actions"><button class="btn" data-act="close">Cancelar</button>
+      <button class="btn solid" data-act="start" data-reconnect="${esc(reconnect ?? '')}">Abrir login</button></div>`;
+  if (!$('dlg').open) $('dlg').showModal();
+  $('f-email')?.focus();
+}
+
+function renderJob() {
+  if (!$('dlg').open || !job) return;
+  const j = job;
+  // Redraw only when something changed, so a code being typed is not wiped.
+  const sig = [j.status, j.browserUrl, j.manualUrl, j.error].join('|');
+  if ($('dlg-body').dataset.sig === sig) return;
+  let html = '';
+  if (j.status === 'iniciando' || j.status === 'aguardando' || j.status === 'finalizando') {
+    html = `<h2>Entre na conta${j.email ? ` ${esc(j.email)}` : ''}</h2>
+      <div class="wait"><div class="spin"></div><p>${j.status === 'finalizando' ? 'Login feito. Guardando no Keychain…' : 'Esperando você terminar o login na janela que abriu…'}</p></div>
+      <p class="hint">Se o claude.ai pedir um <b>código de 6 dígitos</b> enviado por e-mail, digite-o <b>na própria página do claude.ai</b>, na janela de login. Não clique no link do e-mail: ele abre fora da janela anônima.</p>
+      ${j.browserUrl ? `<p>A janela não abriu? <a href="${esc(j.browserUrl)}" target="_blank" rel="noopener noreferrer">Abrir o login aqui</a>.</p>` : ''}
+      ${j.manualUrl ? `<details class="alt"${$('f-code')?.value ? ' open' : ''}><summary style="cursor:pointer">Fazendo o login em outro aparelho?</summary>
+        <p style="margin:8px 0 0">Abra <a href="${esc(j.manualUrl)}" target="_blank" rel="noopener noreferrer">este link</a> lá. No fim, a página de autorização mostra um <b>código longo</b> (não o de 6 dígitos do e-mail); cole aqui:</p>
+        <div class="code-row"><input id="f-code" autocomplete="off" placeholder="código longo da página de autorização"><button class="btn" data-act="code">Enviar</button></div></details>` : ''}
+      <div class="dlg-actions"><button class="btn" data-act="cancel">Cancelar login</button></div>`;
+  } else if (j.status === 'concluido') {
+    html = `<h2>Conta no rodízio</h2>
+      <div class="result">${icon('good')}<p><b>${esc(j.email ?? 'A conta')}</b>${j.plan ? ` (${esc(j.plan)})` : ''} ${j.reconnectOf ? 'foi reconectada.' : 'ganhou uma raia.'}</p></div>
+      <div class="dlg-actions"><button class="btn" data-act="close">Fechar</button>${j.reconnectOf ? '' : '<button class="btn solid" data-act="again">Conectar outra</button>'}</div>`;
+  } else {
+    html = `<h2>${j.status === 'cancelado' ? 'Login cancelado' : 'O login não deu certo'}</h2>
+      <div class="result">${icon('critical')}<p>${esc(j.error ?? 'Sem detalhes.')}</p></div>
+      <div class="dlg-actions"><button class="btn" data-act="close">Fechar</button><button class="btn solid" data-act="again" data-reconnect="${esc(j.reconnectOf ?? '')}">Tentar de novo</button></div>`;
+  }
+  $('dlg-body').innerHTML = html;
+  $('dlg-body').dataset.sig = sig;
+}
+
+async function pollJob() {
+  if (!job || !$('dlg').open) return;
+  try {
+    job = await api('GET', `/api/jobs/${job.id}`);
+    renderJob();
+    if (['iniciando', 'aguardando', 'finalizando'].includes(job.status)) setTimeout(pollJob, 1200);
+    else load();
+  } catch (e) { toast(e.message, true); }
+}
+
+/** A login started before this page was opened (or before a reload) is picked up again. */
+function resumeJob() {
+  if (job || $('dlg').open || !S?.jobs) return;
+  const running = S.jobs.find((j) => ['iniciando', 'aguardando', 'finalizando'].includes(j.status));
+  if (!running) return;
+  job = running;
+  $('dlg-body').dataset.sig = '';
+  $('dlg').showModal();
+  renderJob();
+  setTimeout(pollJob, 800);
+}
+
+// ------------------------------------------------------------------ actions
+
+let toastTimer;
+function toast(text, bad = false) {
+  const t = $('toast');
+  t.textContent = text;
+  t.className = `show${bad ? ' bad' : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = ''), bad ? 7000 : 3000);
+}
+
+async function act(fn, ok) {
+  if (busy) return;
+  busy = true;
+  try {
+    const r = await fn();
+    if (r && r.accounts) { S = r; render(); }
+    if (ok) toast(ok);
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    busy = false;
+  }
+}
+
+function move(id, delta) {
+  const ids = S.accounts.map((a) => a.id);
+  const i = ids.indexOf(id), j = i + delta;
+  if (j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  act(() => api('POST', '/api/order', { ids }));
+}
+
+function setMargin(key, v) {
+  const n = Number(String(v).replace(',', '.'));
+  if (!Number.isFinite(n)) return toast('Use um número, como 4 ou 2,5.', true);
+  const what = key === 'fiveHourRemainingPct' ? 'da janela de 5 h' : 'da semana';
+  act(() => api('POST', '/api/config', { [key]: n }), `O bastão passa quando faltar ${pct(n)} ${what}.`);
+}
+
+document.addEventListener('click', (ev) => {
+  const el = ev.target.closest('[data-act], [data-margin]');
+  if (!el) return;
+  if (el.dataset.margin) return setMargin(el.dataset.key, el.dataset.margin);
+  el.closest('details.menu')?.removeAttribute('open');
+  const id = el.dataset.id;
+  switch (el.dataset.act) {
+    case 'connect': return openConnect(el.dataset.email || '');
+    case 'adopt': return act(() => api('POST', '/api/accounts/adopt'), `${S.mainEmail ?? 'A conta'} entrou no rodízio com o bastão.`);
+    case 'reconnect': return openConnect('', id);
+    case 'use': {
+      const a = S.accounts.find((x) => x.id === id);
+      return act(() => api('POST', `/api/accounts/${id}/use`), `O bastão está com ${a?.email ?? 'outra conta'}.`);
+    }
+    case 'pause': return act(() => api('POST', `/api/accounts/${id}/pause`, { paused: el.dataset.paused === '1' }));
+    case 'remove':
+      if (!confirm(`Tirar ${el.dataset.email} do rodízio? O login guardado dela sai do Keychain.`)) return;
+      return act(() => api('POST', `/api/accounts/${id}/remove`), 'Conta removida.');
+    case 'up': return move(id, -1);
+    case 'down': return move(id, 1);
+    case 'close': $('dlg').close(); job = null; return;
+    case 'again': return openConnect('', el.dataset.reconnect || null);
+    case 'start': {
+      const reconnect = el.dataset.reconnect || null;
+      const email = $('f-email')?.value.trim() || null;
+      el.disabled = true;
+      api('POST', reconnect ? `/api/accounts/${reconnect}/reconnect` : '/api/accounts/connect', reconnect ? {} : { email })
+        .then((j) => { job = j; $('dlg-body').dataset.sig = ''; renderJob(); setTimeout(pollJob, 800); })
+        .catch((e) => { el.disabled = false; toast(e.message, true); });
+      return;
+    }
+    case 'code': {
+      const code = $('f-code')?.value;
+      return api('POST', `/api/jobs/${job.id}/code`, { code }).then((j) => { job = j; toast('Código enviado.'); }).catch((e) => toast(e.message, true));
+    }
+    case 'cancel': return api('POST', `/api/jobs/${job.id}/cancel`).catch((e) => toast(e.message, true));
+  }
+});
+document.addEventListener('click', (ev) => {
+  for (const m of document.querySelectorAll('details.menu[open]')) if (!m.contains(ev.target)) m.removeAttribute('open');
+});
+document.addEventListener('change', (ev) => {
+  const t = ev.target;
+  if (t.dataset?.cfg) act(() => api('POST', '/api/config', { [t.dataset.cfg]: t.checked }));
+  if (t.classList?.contains('margin-custom') && t.value.trim()) setMargin(t.dataset.key, t.value);
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && ev.target.classList?.contains('margin-custom')) ev.target.blur();
+  if (ev.key === 'Enter' && ev.target.id === 'f-email') document.querySelector('[data-act="start"]')?.click();
+  if (ev.key === 'Enter' && ev.target.id === 'f-code') document.querySelector('[data-act="code"]')?.click();
+});
+$('btn-connect').addEventListener('click', () => openConnect(''));
+$('btn-refresh').addEventListener('click', () => act(() => api('POST', '/api/refresh'), 'Uso atualizado.'));
+$('dlg').addEventListener('close', () => { job = null; });
+let resizeT;
+window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => S?.accounts.length && renderRelay(), 120); });
+
+function locked() {
+  $('state').innerHTML = '<span class="dot off"></span>sem chave de acesso';
+  $('baton').className = 'empty';
+  $('baton').innerHTML = `<p class="eyebrow">Por segurança</p><h1>Abra o painel pelo terminal</h1>
+    <p class="ink2">A chave de acesso vem no endereço que o comando abre. Rode:</p><p><code>rodizio painel</code></p>`;
+  for (const id of ['kpis', 'relay-block', 'lanes-block', 'lower', 'btn-refresh', 'btn-connect']) $(id).hidden = true;
+  $('banner').innerHTML = '';
+  $('foot').innerHTML = '';
+}
+
+let live = false;
+let polling = null;
+
+function stateLine() {
+  if (!S) return;
+  const rule = S.config.auto ? `bastão passa em ${S.trigger}%` : 'troca automática desligada';
+  $('state').innerHTML = live ? `<span class="dot on live"></span>ao vivo · ${rule}` : `<span class="dot wait"></span>reconectando · ${rule}`;
+}
+
+function apply(s) {
+  skew = s.now - Date.now() / 1000;
+  S = s;
+  for (const id of ['lower', 'btn-refresh', 'btn-connect']) $(id).hidden = false;
+  stateLine();
+  render();
+  resumeJob();
+}
+
+function down(e) {
+  if (!TOKEN) return locked();
+  $('state').innerHTML = '<span class="dot off"></span>agente sem resposta';
+  $('banner').innerHTML = `<div class="banner"><p>${icon('critical')}<span>O agente não respondeu (${esc(e.message)}). Ele volta sozinho em instantes; se não voltar, rode <code>rodizio doctor --reparar</code>.</span></p></div>`;
+}
+
+async function load() {
+  if (!TOKEN) return locked();
+  try {
+    apply(await api('GET', '/api/state'));
+  } catch (e) {
+    down(e);
+  }
+}
+
+/**
+ * The live view: the agent pushes the whole state the moment it changes. When the connection drops (the agent
+ * restarting, the Mac waking up), the page shows what it can and reconnects, waiting a little longer each time.
+ * An agent from before the live view gets asked every few seconds instead.
+ */
+async function connect(retry = 0) {
+  if (!TOKEN) return locked();
+  try {
+    const r = await fetch('/api/stream', { headers: { 'X-Rodizio-Token': TOKEN }, cache: 'no-store' });
+    if (r.status === 404) {
+      polling ??= setInterval(() => { if (!document.hidden) load(); }, 4000);
+      return load();
+    }
+    if (r.status === 403) {
+      const j = await r.json().catch(() => ({}));
+      if (j.erro === 'token inválido') {
+        try { localStorage.removeItem(TOKEN_KEY); } catch {}
+        TOKEN = '';
+        return locked();
+      }
+    }
+    if (!r.ok || !r.body) throw new Error(`erro ${r.status}`);
+    retry = 0;
+    live = true;
+    stateLine();
+    const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i);
+        buf = buf.slice(i + 2);
+        const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+        if (line) apply(JSON.parse(line.slice(6)));
+      }
+    }
+  } catch {
+    // the agent went away or the network blinked; the next attempt says which
+  }
+  live = false;
+  stateLine();
+  await load();
+  setTimeout(() => connect(retry + 1), Math.min(10_000, 1000 * 2 ** retry));
+}
+connect();
+</script>
+</body>
+</html>

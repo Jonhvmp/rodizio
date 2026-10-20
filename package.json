@@ -1,0 +1,34 @@
+{
+  "name": "rodizio",
+  "version": "0.4.0",
+  "description": "Rodízio local de várias contas do Claude Code: troca de conta perto do fim da semana ou da janela de 5 h, painel ao vivo em 127.0.0.1, nada sai do seu Mac.",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jonhvmp/rodizio.git"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "multi-account",
+    "rate-limit",
+    "macos",
+    "privacy",
+    "local-first"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "bin": {
+    "rodizio": "bin/rodizio"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "node bin/rodizio agente --demo"
+  }
+}
