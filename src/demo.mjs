@@ -8,6 +8,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { tokenHash } from './blob.mjs';
 import { dayKey } from './insights.mjs';
+import { consume, observe } from './learn.mjs';
 import { FileKeychain, MAIN_SERVICE, serviceForDir } from './keychain.mjs';
 import { emptyState } from './state.mjs';
 import { nowS, readJson, writeJsonAtomic } from './util.mjs';
@@ -89,7 +90,14 @@ function seed(p, kc, now) {
       }
       const cur = win5[x.id];
       st.history[x.id].push([t, Math.round(pct[x.id] * 10) / 10, cur ? Math.round(cur.pct) : 0, x.reset, cur?.reset ?? null]);
+      // the demo learns its own week the way the agent learns a real one
+      consume(st, x.id, x.mult / 5, {
+        weekly: { pct: pct[x.id], resetsAt: x.reset },
+        fiveHour: cur ? { pct: cur.pct, resetsAt: cur.reset } : { pct: 0, resetsAt: null },
+        at: t,
+      });
     }
+    observe(st, t);
   }
   for (const x of people) {
     const last = st.history[x.id].at(-1);

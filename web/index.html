@@ -98,7 +98,8 @@ code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .facts b { color: var(--ink); font-weight: 600; }
 
 /* stat tiles */
-.kpis { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--grid); }
+.kpis { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--grid); }
+.kpi .value .ico { width: 20px; height: 20px; font-size: 12px; transform: translateY(-3px); }
 .kpi { padding: 26px 22px 26px 0; min-width: 0; }
 .kpi + .kpi { padding-left: 22px; border-left: 1px solid var(--grid); }
 .kpi .label { font-size: 12.5px; color: var(--muted); }
@@ -116,6 +117,14 @@ section.block { padding: 34px 0; border-bottom: 1px solid var(--grid); }
 .key.ghost { opacity: .4; }
 
 #relay { width: 100%; position: relative; }
+#pattern { display: grid; grid-template-columns: 34px repeat(24, 1fr); gap: 2px; align-items: center; }
+#pattern .d, #pattern .h { font-size: 11px; color: var(--muted); }
+#pattern .h { text-align: center; }
+#pattern .c { height: 18px; border-radius: 3px; background: var(--surface-2); outline: none; }
+#pattern .c:focus-visible { box-shadow: 0 0 0 2px var(--ink); }
+#pattern .c.now { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.ramp { display: inline-flex; gap: 2px; }
+.ramp i { width: 12px; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s0) calc(var(--k) * 100%), var(--surface-2)); }
 #relay svg { display: block; width: 100%; overflow: visible; }
 #relay text { font: 12px system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); }
 #relay text.small { font-size: 11px; fill: var(--muted); }
@@ -160,6 +169,8 @@ details.table th { color: var(--muted); font-size: 12px; }
 .rule { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--grid); }
 .rule p { margin: 0; flex: 1 1 220px; min-width: 0; }
 .rule small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.rule small.update-state { display: flex; gap: 6px; align-items: baseline; }
+.rule small .ico { width: 14px; height: 14px; font-size: 9px; transform: translateY(2px); }
 .switch { position: relative; width: 36px; height: 22px; flex: none; }
 .switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
 .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--grid); transition: background .2s; pointer-events: none; }
@@ -215,13 +226,19 @@ dialog::backdrop { background: rgba(8,8,8,.42); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 #toast.bad { background: var(--critical); color: #fff; }
 
+@media (max-width: 1100px) and (min-width: 861px) {
+  .kpis { grid-template-columns: repeat(3, 1fr); }
+  .kpi:nth-child(3n+1) { padding-left: 0; border-left: 0; }
+  .kpi:nth-child(n+4) { border-top: 1px solid var(--grid); }
+}
 @media (max-width: 860px) {
   .wrap { padding: 18px 16px 40px; }
   .kpis { grid-template-columns: 1fr 1fr; }
   .kpi { padding: 20px 14px 20px 0; }
   .kpi + .kpi { padding-left: 14px; }
-  .kpi:nth-child(3) { padding-left: 0; border-left: 0; border-top: 1px solid var(--grid); }
-  .kpi:nth-child(4) { border-top: 1px solid var(--grid); }
+  .kpi:nth-child(n) { padding-left: 14px; border-left: 1px solid var(--grid); border-top: 0; }
+  .kpi:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .kpi:nth-child(n+3) { border-top: 1px solid var(--grid); }
   .kpi .value { font-size: 24px; }
   .hero { text-align: left; }
   .hero b { font-size: 52px; }
@@ -257,11 +274,19 @@ dialog::backdrop { background: rgba(8,8,8,.42); }
 
   <section class="block" id="relay-block" hidden>
     <div class="block-head">
-      <div><h2>O revezamento</h2><p>Quem carregou o bastão nos últimos dias e quem carrega daqui para a frente, no ritmo atual.</p></div>
+      <div><h2>O revezamento</h2><p id="relay-sub">Quem carregou o bastão nos últimos dias e quem carrega daqui para a frente.</p></div>
       <div class="legend"><span><i class="key" style="background:var(--ink-2)"></i>com o bastão</span><span><i class="key ghost" style="background:var(--ink-2)"></i>previsão</span><span><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 0 10 5 5 10 0 5Z" fill="var(--ink-2)"/></svg>semana renova</span></div>
     </div>
     <div id="relay"></div>
     <details class="table" id="relay-table"><summary>Ver em tabela</summary><table><thead><tr><th>Conta</th><th>De</th><th>Até</th><th>Duração</th><th></th></tr></thead><tbody></tbody></table></details>
+  </section>
+
+  <section class="block" id="pattern-block" hidden>
+    <div class="block-head">
+      <div><h2>Seu padrão de uso</h2><p id="pattern-sub">Quanto você costuma gastar em cada hora da semana, aprendido sozinho.</p></div>
+      <div class="legend" aria-hidden="true"><span>menos</span><span class="ramp"><i style="--k:.12"></i><i style="--k:.3"></i><i style="--k:.5"></i><i style="--k:.75"></i><i style="--k:1"></i></span><span>mais</span></div>
+    </div>
+    <div id="pattern" role="img"></div>
   </section>
 
   <section class="block" id="lanes-block" hidden>
@@ -397,8 +422,9 @@ function render() {
   renderBaton();
   $('kpis').hidden = !has;
   $('relay-block').hidden = !has;
+  $('pattern-block').hidden = !has || !S.learning?.grid;
   $('lanes-block').hidden = !has;
-  if (has) { renderKpis(); renderRelay(); renderLanes(); }
+  if (has) { renderKpis(); renderRelay(); renderPattern(); renderLanes(); }
   if (!$('rules').contains(document.activeElement)) renderRules();
   renderEvents();
   $('foot').innerHTML = `Logins no Keychain deste Mac · estado em <code>${esc(S.home)}</code> · painel só em <code>127.0.0.1:${S.port}</code><br>
@@ -412,7 +438,7 @@ function render() {
 }
 
 /** The agent version this page was written for (API_VERSION in src/core.mjs). */
-const PAGE_API = 3;
+const PAGE_API = 4;
 
 function renderBanner() {
   const b = [];
@@ -488,21 +514,46 @@ function renderBaton() {
     <div class="facts">${facts.map((x) => `<span>${x}</span>`).join('')}</div>`;
 }
 
+/** "6 h", "5 h 30", "40 min": hours of use, read the way people say them. */
+function useHours(h) {
+  if (h === null || h === undefined || !Number.isFinite(h)) return '—';
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`;
+  const whole = Math.floor(h), min = Math.round((h - whole) * 60);
+  return min >= 5 && whole < 10 ? `${whole} h ${String(min).padStart(2, '0')}` : `${Math.round(h)} h`;
+}
+
+function learningNote() {
+  const L = S.learning;
+  if (!L || L.basis === null) return 'o ritmo aparece depois de ~1 h de uso';
+  if (L.basis === 'recente') return 'no ritmo das últimas horas · aprendendo o seu padrão';
+  const d = L.observedDays;
+  return L.confidence === 'baixa' ? `aprendendo o seu padrão · ${dec(d)} dia${d >= 2 ? 's' : ''} de dados` : `no seu padrão de ${Math.round(d)} dias`;
+}
+
 function renderKpis() {
-  const r = S.rotation, fc = S.forecast, t = S.today, l = S.live, wk = S.week;
-  let fuelValue, fuelDetail;
-  if (r.hoursLeft !== null && r.hoursLeft !== undefined) {
-    fuelValue = `≈ ${hours(r.hoursLeft)}`;
-    if (fc?.gapAt) fuelDetail = `${icon('critical')}<span>acaba ${esc(whenRel(fc.gapAt))}${fc.gapUntil ? `; volta ${esc(whenRel(fc.gapUntil))}` : ''}</span>`;
-    else if (fc) fuelDetail = `${icon('good')}<span>${pct(r.leftShare * 100)} da capacidade · com as renovações da semana, cobre os próximos 3 dias</span>`;
-    else fuelDetail = `<span>${pct(r.leftShare * 100)} da capacidade semanal</span>`;
+  const r = S.rotation, t = S.today, l = S.live, wk = S.week, v = S.verdict;
+  let vValue, vDetail;
+  if (!v) {
+    vValue = '—';
+    vDetail = `<span>${esc(learningNote())}</span>`;
   } else {
-    fuelValue = r.leftShare !== null ? pct(r.leftShare * 100) : '—';
-    fuelDetail = '<span>da capacidade semanal · o ritmo aparece depois de ~1 h de uso</span>';
+    const when_ = esc(whenRel(v.target));
+    const usage = v.typicalHoursPerDay !== null ? `você usa ~${useHours(v.typicalHoursPerDay)}/dia` : '';
+    const budget = v.roomy ? 'dá para usar à vontade' : v.budgetHoursPerDay !== null ? `dá para usar até ${useHours(v.budgetHoursPerDay)}/dia` : '';
+    if (v.ok) {
+      vValue = `Chega ${icon('good')}`;
+      vDetail = `<span>até ${when_}${v.pauseHours >= 0.25 ? `, com pausas da janela de 5 h (~${useHours(v.pauseHours)})` : ''}${usage || budget ? ` · ${[usage, budget].filter(Boolean).join(', ')}` : ''}</span>`;
+    } else {
+      vValue = `Falta ~${useHours(v.gapHours)}`;
+      vDetail = `${icon('critical')}<span>acaba ${esc(whenRel(v.firstGapAt))}, a renovação é ${when_}${v.budgetHoursPerDay !== null ? ` · para chegar, use até ${useHours(v.budgetHoursPerDay)}/dia` : ''}${usage ? ` (${usage})` : ''}</span>`;
+    }
   }
+  const fuelValue = r.hoursLeft !== null && r.hoursLeft !== undefined ? `≈ ${useHours(r.hoursLeft)}` : r.leftShare !== null ? pct(r.leftShare * 100) : '—';
+  const fuelDetail = `<span>${r.hoursLeft !== null && r.hoursLeft !== undefined && r.leftShare !== null ? `de uso · ${pct(r.leftShare * 100)} da capacidade da semana` : 'da capacidade da semana'}</span>`;
   const tokens = t.tokensIn + t.tokensOut;
   const tiles = [
-    ['Fôlego do rodízio', fuelValue, fuelDetail, 'Até a zona de passagem de todas as contas da fila, no ritmo das últimas horas. A 20x conta como quatro 5x.'],
+    ['Até a renovação', vValue, vDetail, `Se, no seu ritmo, as contas duram até a semana da conta preferida renovar. ${learningNote()}.`],
+    ['Fôlego do rodízio', fuelValue, fuelDetail, 'Horas de uso até a zona de passagem de todas as contas da fila, no ritmo de uma hora típica sua. A 20x conta como quatro 5x.'],
     ['Hoje', t.cost > 0 ? moneyShort(t.cost) : 'US$ 0', tokens > 0 ? `<span>${compact.format(tokens)} tokens · +${compact.format(t.linesAdded)} −${compact.format(t.linesRemoved)} linhas</span>` : '<span>nenhuma resposta registrada hoje</span>', 'Custo equivalente na API, somado das sessões interativas pela linha de status.'],
     ['Agora', l.sessions ? `${l.sessions} ${l.sessions === 1 ? 'sessão' : 'sessões'}` : 'nenhuma', l.sessions ? `<span>${esc(l.models.join(', ') || 'modelo desconhecido')}${l.maxContext ? ` · contexto até ${pct(l.maxContext)}` : ''}</span>` : '<span>sessão aberta do Claude Code</span>', 'Sessões que responderam nos últimos 3 minutos.'],
     ['Nos últimos 7 dias', `${wk.switches} ${wk.switches === 1 ? 'troca' : 'trocas'}`, `<span>${wk.lastSwitchAt ? `última ${esc(whenRel(wk.lastSwitchAt))}` : 'nenhuma troca ainda'}${batonShare()}</span>`, ''],
@@ -566,11 +617,14 @@ function renderRelay() {
   // gaps: nobody left to carry the baton
   for (const s of S.forecast?.segments ?? []) {
     if (s.id !== null) continue;
-    const g = el('rect', { x: x(s.from), y: top - 6, width: Math.max(2, x(s.to) - x(s.from)), height: accs.length * rowH + 12, fill: 'var(--critical)', 'fill-opacity': .1, class: 'hit', tabindex: 0 }, svg);
-    g.dataset.tip = JSON.stringify({ v: 'Sem conta livre', l: `${whenRel(s.from)} → ${whenRel(s.to)} · ${span(s.to - s.from)}` });
+    const pause = s.why === 'fiveHour';
+    const tone = pause ? 'var(--warning)' : 'var(--critical)';
+    const g = el('rect', { x: x(s.from), y: top - 6, width: Math.max(2, x(s.to) - x(s.from)), height: accs.length * rowH + 12, fill: tone, 'fill-opacity': pause ? .14 : .1, class: 'hit', tabindex: 0 }, svg);
+    g.dataset.tip = JSON.stringify({ v: pause ? 'Pausa: as janelas de 5 h estão na zona' : 'Sem conta livre: as semanas acabaram', l: `${whenRel(s.from)} → ${whenRel(s.to)} · ${span(s.to - s.from)}` });
     if (s === firstGap) {
+      const label = pause ? '! pausa de 5 h' : '! sem fôlego';
       const fits = x(s.from) + 84 < W;
-      txt(svg, fits ? x(s.from) + 4 : W - 2, top - 12, '! sem fôlego', { class: 'small', 'text-anchor': fits ? 'start' : 'end' }).style.fill = 'var(--critical)';
+      txt(svg, fits ? x(s.from) + 4 : W - 2, top - 12, label, { class: 'small', 'text-anchor': fits ? 'start' : 'end' }).style.fill = pause ? 'var(--ink-2)' : 'var(--critical)';
     }
   }
 
@@ -603,7 +657,37 @@ function renderRelay() {
   txt(svg, xn, top - 12, 'agora', { 'text-anchor': 'middle', class: 'small' }).style.fill = 'var(--ink)';
 
   box.replaceChildren(svg);
+  $('relay-sub').textContent = `Quem carregou o bastão nos últimos dias e quem carrega daqui para a frente, ${S.learning?.basis === 'aprendido' ? 'no seu padrão de uso aprendido (noites e pausas incluídas)' : 'no ritmo das últimas horas, como se o uso fosse contínuo'}.`;
   renderRelayTable();
+}
+
+const DAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/** The learned pattern as a 7 × 24 grid, Monday first; color is the expected spend of that hour, one hue. */
+function renderPattern() {
+  const L = S.learning;
+  if (!L?.grid) return;
+  const pref = S.accounts.find((a) => a.position === 1);
+  const cap = pref?.plan ? (/(\d+)x/.exec(pref.plan)?.[1] ?? 5) / 5 : 1;
+  const max = Math.max(...L.grid.flat(), 1e-9);
+  const nowD = new Date(now() * 1000);
+  const frag = [`<span></span>`];
+  for (let h = 0; h < 24; h++) frag.push(`<span class="h">${h % 3 === 0 ? h : ''}</span>`);
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) {
+    frag.push(`<span class="d">${DAYS[d]}</span>`);
+    for (let h = 0; h < 24; h++) {
+      const rate = L.grid[d][h];
+      const k = rate / max;
+      const pctPerHour = (rate / cap) * 100;
+      const style = k > 0.04 ? `background:color-mix(in srgb, var(--s0) ${Math.round(12 + k * 88)}%, var(--surface-2))` : '';
+      const tip = JSON.stringify({ v: k > 0.04 ? `~${dec(pctPerHour, pctPerHour < 1 ? 2 : 1)}% da semana${pref ? ` da ${local(pref.email)}` : ''} por hora` : 'quase sem uso', l: `${DAYS[d]}, ${h}h–${h + 1}h` });
+      frag.push(`<span class="c${d === nowD.getDay() && h === nowD.getHours() ? ' now' : ''}" tabindex="0" style="${style}" data-tip="${esc(tip)}"></span>`);
+    }
+  }
+  $('pattern').innerHTML = frag.join('');
+  $('pattern').setAttribute('aria-label', `Padrão de uso por hora da semana. ${learningNote()}.`);
+  const typical = L.typicalHoursPerDay;
+  $('pattern-sub').textContent = `${typical !== null ? `Você costuma usar ~${useHours(typical)} por dia. ` : ''}${learningNote().replace(/^./, (c) => c.toUpperCase())}; semanas recentes pesam mais.`;
 }
 
 function renderRelayTable() {
@@ -673,6 +757,23 @@ function marginControl(key, label) {
   </div>`;
 }
 
+function updateRule() {
+  const u = S.update ?? {};
+  const looked = u.checkedAt ? `procurado ${esc(whenRel(u.checkedAt))}` : 'ainda não procurado';
+  const state = {
+    'em-dia': `${icon('good')} em dia · ${looked}`,
+    disponivel: `${icon('warning')} versão <b>${esc(u.latest)}</b> disponível · ${looked}`,
+    falhou: `${icon('critical')} ${esc(u.why ?? 'a última atualização falhou')}`,
+    parado: `${esc(u.why ?? 'atualização automática indisponível aqui')}`,
+    erro: `${icon('warning')} não consegui procurar (${esc(u.why ?? 'sem rede?')})`,
+    pulada: `${icon('warning')} ${esc(u.latest)} foi pulada porque falhou antes`,
+  }[u.status] ?? looked;
+  const shown = u.running ? `${icon('warning')} atualizando agora…` : state;
+  const canApply = !u.running && (u.status === 'disponivel' || u.status === 'pulada');
+  return `<div class="rule"><p>Versão ${esc(S.version ?? '')}<small class="update-state">${shown}</small></p>
+    <div class="actions">${canApply ? '<button class="btn solid" data-act="update-apply">Atualizar</button>' : ''}<button class="btn" data-act="update-check">Procurar agora</button></div></div>`;
+}
+
 function renderRules() {
   const c = S.config;
   $('rules').innerHTML = `<h2>Regras</h2><p class="muted" style="margin:0;font-size:13px">Valem na hora; ficam salvas neste Mac.</p>
@@ -686,7 +787,9 @@ function renderRules() {
     ${toggle('notify', 'Avisar no Mac', 'Notificação com som a cada troca.')}
     ${toggle('useApi', 'Ler o uso na Anthropic', 'No mesmo endereço do /usage, com o token de cada conta. Desligado: só a linha de status mede.')}
     ${c.useApi ? toggle('pollParked', 'Ler também as contas paradas', 'A cada 15 minutos, para a fila saber quem ainda tem saldo.') : ''}
-    ${toggle('incognitoLogin', 'Login em janela anônima', 'Abre o login no Brave (ou Chrome) anônimo, para não cair na conta aberta no navegador.')}`;
+    ${toggle('incognitoLogin', 'Login em janela anônima', 'Abre o login no Brave (ou Chrome) anônimo, para não cair na conta aberta no navegador.')}
+    ${toggle('autoUpdate', 'Atualizar sozinho', 'Instala as versões novas publicadas no GitHub, só as assinadas pelo autor, e volta para a anterior se algo falhar. O vigia procura a cada 6 h.')}
+    ${updateRule()}`;
 }
 
 const EVT = { troca: '', conta: '', erro: 'critical', alerta: 'critical', aviso: 'warning', info: '' };
@@ -839,6 +942,10 @@ document.addEventListener('click', (ev) => {
   const id = el.dataset.id;
   switch (el.dataset.act) {
     case 'connect': return openConnect(el.dataset.email || '');
+    case 'update-check': return act(() => api('POST', '/api/update/check'), 'Procurando versão nova…');
+    case 'update-apply':
+      if (!confirm('Instalar a versão nova agora? O agente reinicia por alguns segundos; se ela não subir, a anterior volta sozinha.')) return;
+      return act(() => api('POST', '/api/update/apply'), 'Atualizando… o painel se reconecta sozinho.');
     case 'adopt': return act(() => api('POST', '/api/accounts/adopt'), `${S.mainEmail ?? 'A conta'} entrou no rodízio com o bastão.`);
     case 'reconnect': return openConnect('', id);
     case 'use': {

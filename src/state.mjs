@@ -17,10 +17,12 @@ export const DEFAULT_CONFIG = {
   useApi: true,
   pollParked: true,
   incognitoLogin: true,
+  /** Install new published versions by themselves (signed releases only; see update.mjs). */
+  autoUpdate: true,
   order: [],
 };
 
-export const CONFIG_KEYS = ['remainingPct', 'fiveHourSwitch', 'fiveHourRemainingPct', 'auto', 'returnToPreferred', 'notify', 'useApi', 'pollParked', 'incognitoLogin'];
+export const CONFIG_KEYS = ['remainingPct', 'fiveHourSwitch', 'fiveHourRemainingPct', 'auto', 'returnToPreferred', 'notify', 'useApi', 'pollParked', 'incognitoLogin', 'autoUpdate'];
 export const PCT_KEYS = new Set(['remainingPct', 'fiveHourRemainingPct']);
 
 

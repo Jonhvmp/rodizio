@@ -1,8 +1,17 @@
 // Usage and profile of an account, read with its own access token. These are the endpoints behind Claude Code's
 // /usage; reading them does not rotate the token. The User-Agent says what is calling.
 
+import fs from 'node:fs';
+
 const BETA = 'oauth-2025-04-20';
-const USER_AGENT = 'rodizio/0.4 (rotacao local de contas do Claude Code)';
+const VERSION = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  } catch {
+    return '0';
+  }
+})();
+const USER_AGENT = `rodizio/${VERSION} (rotacao local de contas do Claude Code)`;
 
 function windowFromApi(w) {
   if (!w || typeof w !== 'object') return null;

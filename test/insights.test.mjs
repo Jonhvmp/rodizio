@@ -78,7 +78,7 @@ test('forecast: the 20x runs to the trigger, then the queue takes over, then a g
   // b: 50% left → 0.5 units → 5 h
   assert.deepEqual(f.segments[1], { id: 'b', from: NOW + 4 * H, to: NOW + 9 * H });
   // c is at the limit until its week resets at +20 h: nothing to use in between
-  assert.deepEqual(f.segments[2], { id: null, from: NOW + 9 * H, to: NOW + 20 * H });
+  assert.deepEqual(f.segments[2], { id: null, from: NOW + 9 * H, to: NOW + 20 * H, why: 'weekly' });
   assert.equal(f.gapAt, NOW + 9 * H);
   assert.equal(f.segments[3].id, 'c');
 });

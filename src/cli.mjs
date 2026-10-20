@@ -10,6 +10,9 @@ const HELP = `rodizio: rodízio local das contas do Claude Code
   rodizio status               contas, uso e a conta em uso
   rodizio trocar <e-mail>      troca agora para essa conta
   rodizio doctor [--reparar]   confere agente, vigia, painel, linha de status, comando e app
+  rodizio atualizar            instala a versão publicada mais nova (assinada), se houver
+      --verificar              só diz se há versão nova
+  rodizio versao               a versão instalada
   rodizio instalar             agente e vigia no launchd, linha de status, o comando e o app Rodízio
       --sem-linha-de-status    não mexe em ~/.claude/settings.json
   rodizio desinstalar          tira agente, vigia, linha de status, comando e app
@@ -74,6 +77,36 @@ export async function main(args) {
         spawnSync('open', [`${dashboardUrl(c)}#t=${c.token}`]);
         return;
       }
+      case 'atualizar': {
+        // By hand: look now, and install unless only checking (automatic updates on or off).
+        const { maybeUpdate, currentVersion } = await import('./update.mjs');
+        const { restartWithNewCode } = await import('./install.mjs');
+        const check = rest.includes('--verificar');
+        const r = await maybeUpdate({ home: paths().home, auto: !check, apply: !check, force: true, restart: restartWithNewCode, log: (m) => console.log(m) });
+        const rec = r.record;
+        const text = {
+          'em-dia': `Em dia: versão ${currentVersion()}.`,
+          disponivel: `Versão nova disponível: ${rec.latest} (instalada: ${rec.current}). Rode \`rodizio atualizar\` para instalar.`,
+          atualizado: `Atualizado para ${rec.current}.${rec.last?.notes ? `\n\n${rec.last.notes}` : ''}`,
+          falhou: `Não atualizei: ${rec.why}`,
+          parado: `Não dá para atualizar sozinho: ${rec.why}`,
+          erro: `Não consegui procurar: ${rec.why}`,
+          pulada: `${rec.latest} foi pulada porque falhou antes.`,
+          ocupado: 'Já há uma atualização em andamento.',
+        }[r.status];
+        console.log(text ?? r.status);
+        if (r.status === 'falhou' || r.status === 'erro') process.exitCode = 1;
+        return;
+      }
+      case 'reiniciar': {
+        const ok = await (await import('./install.mjs')).restartAgent();
+        console.log(ok ? 'Agente de volta.' : 'O agente não respondeu.');
+        process.exitCode = ok ? 0 : 1;
+        return;
+      }
+      case 'versao':
+        console.log((await import('./update.mjs')).currentVersion());
+        return;
       case 'doctor': {
         // --vigia is the watchdog: it always repairs, but only what keeps the agent alive
         const watch = rest.includes('--vigia');

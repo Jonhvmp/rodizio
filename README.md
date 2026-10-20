@@ -19,18 +19,21 @@ ninguém, sem conta no rodízio, sem telemetria, sem dependências npm.
   próxima conta com folga, em menos de um segundo.
 - **Volta para a preferida.** Quando a sua conta principal (a de plano maior, por padrão) renova a janela, o bastão volta
   para ela no mesmo segundo.
-- **Mostra tudo ao vivo.** Uso da semana e das 5 h de cada conta, ritmo de consumo, quando cada uma chega na zona, o
-  fôlego de todas juntas, a previsão de quem carrega o bastão nos próximos dias, custo equivalente e tokens do dia,
-  sessões abertas e o histórico de trocas.
-- **Cuida de si mesmo.** Sobe no login do Mac, volta se cair, um vigia religa se travar, e `rodizio doctor` confere e
-  conserta a instalação.
+- **Aprende o seu jeito de usar.** Hora a hora, dia a dia, contando noites e fins de semana parados, e responde direto:
+  **chega até a renovação?** "Sim, você usa ~6 h por dia e dá para usar até 8" ou "Falta ~2 h; para chegar, use até 4 h
+  por dia".
+- **Mostra tudo ao vivo.** Uso da semana e das 5 h de cada conta, ritmo, quando cada uma chega na zona, o fôlego de
+  todas juntas, o seu padrão de uso num mapa da semana, a previsão de quem carrega o bastão, custo equivalente e tokens
+  do dia, sessões abertas e o histórico de trocas.
+- **Cuida de si mesmo.** Sobe no login do Mac, volta se cair, um vigia religa se travar, `rodizio doctor` confere e
+  conserta a instalação, e as versões novas chegam sozinhas, só as assinadas pelo autor.
 
 ## Privacidade
 
 | | |
 |---|---|
 | **Fica no seu Mac** | Os logins (no Keychain, nas entradas que o próprio Claude Code cria), o uso, o histórico e as regras (em `~/.rodizio`, só para o seu usuário). |
-| **Sai para a rede** | Só para a Anthropic, com o token de cada conta: o login oficial (feito pelo próprio Claude Code), a conferência de qual conta está em uso e, se você quiser, a leitura de uso de cada conta. Tudo se identificando como `rodizio`. |
+| **Sai para a rede** | Para a Anthropic, com o token de cada conta: o login oficial (feito pelo próprio Claude Code), a conferência de qual conta está em uso e, se você quiser, a leitura de uso de cada conta, sempre se identificando como `rodizio`. E para o GitHub, a cada 6 h, só para ver se há versão nova (o `git` pergunta os nomes das versões; nada seu vai junto). Dá para desligar no painel. |
 | **Nunca sai** | Suas conversas, seu código, seus e-mails, seus números. Não existe servidor do rodízio para onde mandar. |
 | **O painel** | Só em `127.0.0.1`, protegido por uma chave que só o seu navegador tem. Outro site aberto ou outro programa do Mac não consegue usá-lo. |
 
@@ -97,6 +100,7 @@ rodizio trocar b@x.com      # passa o bastão agora
 rodizio painel              # abre o painel (religa o agente antes, se precisar)
 rodizio doctor              # confere agente, vigia, painel, linha de status, comando e app
 rodizio doctor --reparar    # e conserta o que faltar
+rodizio atualizar           # instala a versão publicada mais nova, se houver
 ```
 
 O painel fica sempre em `http://rodizio.localhost:<porta>`. Pelo menu do Brave ou do Chrome, **Instalar Rodízio** abre
@@ -114,6 +118,38 @@ passagem, os últimos N% dela (5% de fábrica; ajustável no painel, separadamen
    depois da última troca). Uma escolha feita à mão fica até a conta chegar numa zona.
 5. **Freios:** 90 s entre trocas automáticas; mais de 8 trocas automáticas numa hora seguram as próximas e avisam.
 6. **Ninguém com folga:** fica na conta atual e avisa até alguma janela renovar.
+
+## Como ele prevê
+
+O rodízio aprende sozinho, sem você configurar nada:
+
+- **Quanto você gasta em cada hora da semana**, das leituras de uso de todas as contas, contando também as horas em que
+  você não usa (noites, almoço, fim de semana). Semanas recentes pesam mais; enquanto um dia da semana tem poucos dados,
+  vale a média daquela hora nos dias úteis (ou no fim de semana).
+- **O que está acontecendo agora:** se você está numa sessão pesada, as próximas horas consideram esse ritmo, e depois
+  a previsão volta ao seu padrão.
+- **Quanto da janela de 5 h custa cada ponto da semana**, para prever as pausas das 5 h.
+
+Com isso ele simula hora a hora, com as mesmas regras de troca, até a semana da conta preferida renovar, e diz se dá,
+quanto falta ou sobra, e quantas horas por dia você pode usar. Nos primeiros dias o painel avisa "aprendendo"; com
+uma semana de dados, o padrão fica completo. O mapa "Seu padrão de uso" mostra o que ele aprendeu.
+
+## Atualizações
+
+As versões novas chegam sozinhas. A cada 6 h o vigia procura no GitHub e só instala uma versão que:
+
+- foi **publicada** (uma tag `vX.Y.Z` no `main`), e não qualquer mudança no repositório;
+- está **assinada** pela chave do autor, conferida contra as chaves da versão que você **já tem** instalada. Mesmo quem
+  tomasse conta do repositório não conseguiria publicar uma versão que a sua instalação aceite;
+- é **mesmo a versão que diz ser** (assinada com esse nome, com esse número no código);
+- **continua** a sua versão (só para a frente), numa pasta onde você não mexeu no código.
+
+Depois de trocar, a versão nova precisa responder e continuar de pé; se não, a anterior volta sozinha e a nova é
+pulada. O histórico do painel diz o que mudou. Para fazer na mão: `rodizio atualizar` (ou `--verificar` para só olhar).
+Para desligar: **Regras → Atualizar sozinho**.
+
+> Instalou antes da 0.5.0? Atualize uma vez à mão (`cd ~/rodizio && git pull && rodizio reiniciar`); daí em diante é
+> automático.
 
 ## Como funciona
 

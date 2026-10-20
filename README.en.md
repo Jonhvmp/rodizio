@@ -20,16 +20,21 @@ cloud, no third-party server, no account to create, no telemetry, no npm depende
 - **Shows everything live:** weekly and 5-hour usage per account, spending pace, when each reaches the zone, how long the
   whole rotation lasts, a forecast of who carries the baton next, today's equivalent cost and tokens, open sessions and
   the switch history.
-- **Looks after itself:** starts at login, restarts if it exits, a watchdog restarts it if it hangs, and
-  `rodizio doctor` checks and repairs the installation.
+- **Learns how you use it:** hour by hour, day by day, idle nights and weekends included, and answers straight away
+  whether your accounts last until the next weekly renewal, and how many hours a day you can use to get there.
+- **Looks after itself:** starts at login, restarts if it exits, a watchdog restarts it if it hangs, `rodizio doctor`
+  checks and repairs the installation, and new versions install by themselves (signed releases only: a tag on main,
+  signed with the author's SSH key and checked against the keys of the version you already have; it rolls back if the
+  agent does not come back).
 
 ## Privacy
 
 - **Stays on your Mac:** logins (in the Keychain, in the items Claude Code itself creates), usage, history and settings
   (in `~/.rodizio`, readable only by your user).
-- **Goes over the network:** only to Anthropic, with each account's own token: the official login (done by Claude Code
-  itself), checking which account is in use and, if you want, reading each account's usage. Always identified as
-  `rodizio`.
+- **Goes over the network:** to Anthropic, with each account's own token: the official login (done by Claude Code
+  itself), checking which account is in use and, if you want, reading each account's usage, always identified as
+  `rodizio`. And to GitHub every 6 hours, only to see whether there is a new version (git asks for the version names;
+  nothing of yours goes along). Both can be turned off.
 - **Never leaves:** your conversations, your code, your e-mails, your numbers. There is no rodízio server to send them to.
 - **The dashboard:** `127.0.0.1` only, behind a key that only your browser has.
 

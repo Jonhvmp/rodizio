@@ -1,6 +1,7 @@
 // Metrics derived from what the agent records: who held the baton when, how fast each window is being spent, how
 // long the whole rotation lasts at that pace, and per-day activity from the status line. Pure: state in, numbers out.
 
+import { paceModel } from './learn.mjs';
 import { FIVE_HOUR_WAIT_S, RETURN_GAP_S, RETURN_MARGIN, effPct, fiveHourOf, fiveHourTriggerOf, priority, triggerOf, weeklyOf } from './decide.mjs';
 
 const H = 3600;
@@ -129,17 +130,26 @@ export function activityBetween(state, accId, fromDay, toDay) {
  */
 const nextReset = (resetsAt, now) => (resetsAt && resetsAt > now ? resetsAt : null);
 
+/** Up to how far the forecast looks: past the next weekly renewal. */
+export const FORECAST_DAYS = 8;
+
 /**
  * Who holds the baton from now on, following the same rules as decide(): hand over when either window enters its
  * zone (waiting out a 5-hour window about to reset), come back to the preferred account once it has room, and treat a
- * window that has not started as starting on first use. `pace` is the spending rate in Max-5x units per hour, for the
- * week and for the 5-hour window (null when not measured: that window is then left out). A stretch with no account
- * that has room is a gap.
+ * window that has not started as starting on first use.
+ *
+ * `pace` gives the spending rate in Max-5x units per hour, for the week and for the 5-hour window: either flat numbers
+ * ({week, fiveHour}) or the learned model ({week: t => rate, five: t => rate | null}, see learn.mjs paceModel), which
+ * changes hour by hour. Without a 5-hour pace that window is left out. A stretch with no account that has room is a
+ * gap, tagged with why: only the 5-hour windows (a pause), or the weeks.
  */
 export function forecast(state, cfg, now, pace, horizon = now + 3 * DAY) {
-  const weekPace = pace?.week;
-  if (!state.active || !state.accounts[state.active] || !(weekPace > 0)) return null;
-  const fivePace = cfg.fiveHourSwitch && pace.fiveHour > 0 ? pace.fiveHour : null;
+  if (!pace || !state.active || !state.accounts[state.active]) return null;
+  const varying = typeof pace.week === 'function';
+  const weekAt = varying ? pace.week : () => pace.week;
+  const fiveAt = varying ? pace.five : pace.fiveHour > 0 ? () => pace.fiveHour : null;
+  if (!varying && !(pace.week > 0)) return null;
+  const useFive = !!(cfg.fiveHourSwitch && fiveAt);
   const tW = triggerOf(cfg);
   const tF = fiveHourTriggerOf(cfg);
   const accs = priority(state, cfg).map((id) => {
@@ -157,12 +167,15 @@ export function forecast(state, cfg, now, pace, horizon = now + 3 * DAY) {
       usable: !a.needsLogin && !a.paused,
     };
   });
-  const room = (a, margin) => a.usable && a.w < tW - margin && (!fivePace || a.f < tF - margin);
-  const inZone = (a) => a.w >= tW || (fivePace && a.f >= tF);
+  const room = (a, margin) => a.usable && a.w < tW - margin && (!useFive || a.f < tF - margin);
+  const inZone = (a) => a.w >= tW || (useFive && a.f >= tF);
   const pick = (except) => accs.find((a) => a !== except && room(a, 1)) ?? null;
+  // With no account left, is it only the 5-hour windows (a pause), or the weeks?
+  const whyNone = () => (accs.some((a) => a.usable && a.w < tW - 1) ? 'fiveHour' : 'weekly');
 
   let cur = accs.find((a) => a.id === state.active);
   if (!cur.usable) cur = pick(cur);
+  let why = cur ? null : whyNone();
   let pinned = !!state.pinned;
   let lastSwitch = state.lastSwitchAt ?? 0;
   let t = now;
@@ -170,35 +183,39 @@ export function forecast(state, cfg, now, pace, horizon = now + 3 * DAY) {
   const segments = [];
   const push = (id, from, to) => {
     const last = segments.at(-1);
-    if (last && last.id === id && last.to === from) last.to = to;
-    else if (to > from) segments.push({ id, from, to });
+    if (last && last.id === id && last.to === from && last.why === (id ? undefined : why)) last.to = to;
+    else if (to > from) segments.push(id ? { id, from, to } : { id, from, to, why });
   };
 
-  for (let i = 0; i < 2000 && t < horizon; i++) {
+  for (let i = 0; i < 5000 && t < horizon; i++) {
+    const weekPace = Math.max(0, weekAt(t) || 0);
+    const fivePace = useFive ? Math.max(0, fiveAt(t) || 0) : 0;
     let tEnd = Infinity;
     let endsBy = null;
     let waiting = false;
     if (cur) {
       // Windows that had not started start now, with the first use.
       cur.wReset ??= t + WEEK;
-      if (fivePace) cur.fReset ??= t + FIVE_H;
+      if (useFive) cur.fReset ??= t + FIVE_H;
       if (!cur.known) uncertain = true;
-      if (fivePace && cur.f >= tF && cur.w < tW && cur.fReset - t <= FIVE_HOUR_WAIT_S) {
+      if (useFive && cur.f >= tF && cur.w < tW && cur.fReset - t <= FIVE_HOUR_WAIT_S) {
         waiting = true; // the 5-hour window resets in a moment: held, without spending
       } else {
-        const toWeek = ((tW - cur.w) / 100) * (cur.cap / weekPace) * H;
-        const toFive = fivePace ? ((tF - cur.f) / 100) * (cur.cap / fivePace) * H : Infinity;
+        const toWeek = weekPace > 0 ? ((tW - cur.w) / 100) * (cur.cap / weekPace) * H : Infinity;
+        const toFive = fivePace > 0 ? ((tF - cur.f) / 100) * (cur.cap / fivePace) * H : Infinity;
         endsBy = toFive < toWeek ? 'fiveHour' : 'weekly';
         tEnd = t + Math.max(0, Math.min(toWeek, toFive));
       }
     }
-    const resets = accs.flatMap((a) => [a.wReset, fivePace ? a.fReset : null]).filter((r) => r !== null && r > t);
-    const tNext = Math.min(tEnd, resets.length ? Math.min(...resets) : Infinity, horizon);
+    const resets = accs.flatMap((a) => [a.wReset, useFive ? a.fReset : null]).filter((r) => r !== null && r > t);
+    // A learned pace changes with the hour: the step never crosses one.
+    const hourEnd = varying ? (Math.floor(t / H) + 1) * H : Infinity;
+    const tNext = Math.min(tEnd, resets.length ? Math.min(...resets) : Infinity, hourEnd, horizon);
     if (tNext === Infinity) break;
     if (cur && !waiting) {
       const dt = (tNext - t) / H;
       cur.w += (dt * weekPace * 100) / cur.cap;
-      if (fivePace) cur.f += (dt * fivePace * 100) / cur.cap;
+      if (useFive) cur.f += (dt * fivePace * 100) / cur.cap;
       // The window that ran out lands exactly on its trigger, so float rounding cannot leave it a hair short.
       if (tNext === tEnd) {
         if (endsBy === 'weekly') cur.w = tW;
@@ -219,11 +236,12 @@ export function forecast(state, cfg, now, pace, horizon = now + 3 * DAY) {
       }
     }
     if (!cur || inZone(cur)) {
-      if (cur && fivePace && cur.w < tW && cur.fReset !== null && cur.fReset - t <= FIVE_HOUR_WAIT_S) continue;
+      if (cur && useFive && cur.w < tW && cur.fReset !== null && cur.fReset - t <= FIVE_HOUR_WAIT_S) continue;
       const next = pick(cur);
       if (next !== cur) lastSwitch = t;
       cur = next;
       pinned = false;
+      why = cur ? null : whyNone();
     } else if (cfg.returnToPreferred && !pinned && t - lastSwitch >= RETURN_GAP_S) {
       // The same rule as decide(): back to a preferred account only with room measured, not assumed.
       for (const a of accs) {
@@ -237,7 +255,97 @@ export function forecast(state, cfg, now, pace, horizon = now + 3 * DAY) {
     }
   }
   const gap = segments.find((s) => s.id === null);
-  return { segments, gapAt: gap?.from ?? null, gapUntil: gap?.to ?? null, horizon, uncertain };
+  return { segments, gapAt: gap?.from ?? null, gapUntil: gap?.to ?? null, gapWhy: gap?.why ?? null, horizon, uncertain };
+}
+
+/** Capacity the pace model expects to be spent between two moments. */
+function spendBetween(weekAt, from, to) {
+  let u = 0;
+  for (let t = from; t < to; ) {
+    const end = Math.min(to, (Math.floor(t / H) + 1) * H);
+    u += Math.max(0, weekAt(t) || 0) * ((end - t) / H);
+    t = end;
+  }
+  return u;
+}
+
+/** Whether the forecast at `k` times the expected pace reaches `until` without running out of weeks. */
+function reaches(state, cfg, now, model, until, k) {
+  const scaled = { week: (t) => k * model.week(t), five: model.five ? (t) => k * model.five(t) : null };
+  const fc = forecast(state, cfg, now, scaled, until);
+  return !fc || !fc.segments.some((g) => g.id === null && g.why !== 'fiveHour' && g.from < until);
+}
+
+/** Past this many times the expected use, the rotation is simply roomy. */
+const MAX_HEADROOM = 16;
+
+/**
+ * How many times the expected use, as the forecast sees it (renewals on the way, accounts never read, pauses), still
+ * reaches `until`: above 1 there is room to spare, below 1 it runs out first. Null when it is roomier than MAX_HEADROOM.
+ */
+function headroom(state, cfg, now, model, until) {
+  let lo = 0;
+  let hi = 1;
+  if (reaches(state, cfg, now, model, until, 1)) {
+    lo = 1;
+    hi = 2;
+    while (reaches(state, cfg, now, model, until, hi)) {
+      if (hi >= MAX_HEADROOM) return null;
+      lo = hi;
+      hi *= 2;
+    }
+  }
+  for (let i = 0; i < 10; i++) {
+    const mid = (lo + hi) / 2;
+    if (reaches(state, cfg, now, model, until, mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * "Do I make it to the renewal?": until the preferred account's week renews (or the first known weekly renewal), does
+ * the forecast run into a stretch with no account, and how many hours a day can be used to just make it. The room and
+ * the hours come from the same simulation as the answer, so they never contradict it.
+ */
+export function verdictOf(state, cfg, now, model, fc) {
+  if (!model || !fc) return null;
+  const ids = priority(state, cfg);
+  const pref = nextReset(state.accounts[ids[0]]?.usage?.weekly?.resetsAt, now);
+  const known = ids.map((id) => nextReset(state.accounts[id].usage?.weekly?.resetsAt, now)).filter(Boolean);
+  const target = pref ?? (known.length ? Math.min(...known) : null);
+  if (!target) return null;
+  const until = Math.min(target, fc.horizon);
+  const gaps = fc.segments.filter((g) => g.id === null && g.from < until).map((g) => ({ ...g, to: Math.min(g.to, until) }));
+  const weekGaps = gaps.filter((g) => g.why !== 'fiveHour');
+  const pauses = gaps.filter((g) => g.why === 'fiveHour');
+  const hours = (list) => list.reduce((sum, g) => sum + (g.to - g.from), 0) / H;
+  const prof = model.profile;
+  const days = (until - now) / DAY;
+  const activeRate = prof?.activeRate ?? null;
+  // Scaling the expected pace needs some expected use to scale: with almost none until the renewal (a weekend, say),
+  // the same question is asked of an hour a day of typical use.
+  const expected = spendBetween(model.week, now, until);
+  const base = activeRate && expected < activeRate * 0.5 ? { week: () => activeRate / 24, five: null } : model;
+  const baseSpend = base === model ? expected : (activeRate / 24) * ((until - now) / H);
+  const k = baseSpend > 0 ? headroom(state, cfg, now, base, until) : null;
+  const usable = k === null ? null : k * baseSpend;
+  const budget = !activeRate || !(days > 0) ? null : usable === null ? Infinity : usable / activeRate / days;
+  return {
+    target: until,
+    preferred: ids[0] ?? null,
+    ok: weekGaps.length === 0,
+    firstGapAt: weekGaps[0]?.from ?? null,
+    gapHours: hours(weekGaps),
+    pauseHours: hours(pauses),
+    /** Capacity left over (negative: missing) at the expected pace, in Max-5x weeks; null when there is plenty. */
+    slackUnits: usable === null ? null : usable - expected,
+    typicalHoursPerDay: prof ? prof.activeHoursPerDay : null,
+    /** Hours a day of typical use that just make it; null when unknown, or when there is room all day (roomy). */
+    budgetHoursPerDay: budget !== null && budget < 24 ? budget : null,
+    roomy: budget !== null && budget >= 24,
+    basis: model.basis,
+  };
 }
 
 /** Everything the dashboard shows beyond the raw readings. */
@@ -250,8 +358,9 @@ export function insights(state, cfg, now) {
   const baton7 = batonTime(state, weekAgo, now);
   const batonToday = batonTime(state, startOfDay(now), now);
 
-  // Weekly pace summed over every account, in Max-5x weeks per hour, so another machine using a parked account
-  // counts too. The 5-hour pace is the account in use's: only the baton holder spends its window here.
+  // The recent weekly pace summed over every account, in Max-5x weeks per hour (another machine using a parked
+  // account counts too), and the 5-hour pace of the account in use. The forecast runs on the learned pattern when
+  // there is one, and on these flat paces until then.
   let weekPace = 0;
   let measured = false;
   let fivePace = null;
@@ -298,9 +407,12 @@ export function insights(state, cfg, now) {
     if (v) for (const k of Object.keys(todayTotals)) todayTotals[k] += v[k] ?? 0;
   }
 
+  const model = paceModel(state, now, { flatWeek: measured ? weekPace : null, flatFive: fivePace });
+  const prof = model?.profile ?? null;
+  const fc = model ? forecast(state, cfg, now, model, now + FORECAST_DAYS * DAY) : null;
+  const observedDays = Object.values(state.learn?.hours ?? {}).reduce((sum, e) => sum + (e.s || 0), 0) / DAY;
   const live = Object.values(state.sessions ?? {}).filter((s) => now - s.at < SESSION_LIVE_S);
   const switches = (state.events ?? []).filter((e) => e.kind === 'troca' && e.at >= weekAgo);
-  const fc = measured ? forecast(state, cfg, now, { week: weekPace, fiveHour: fivePace }) : null;
 
   return {
     perAccount,
@@ -309,9 +421,21 @@ export function insights(state, cfg, now) {
       leftUnits,
       totalUnits,
       leftShare: totalUnits ? leftUnits / totalUnits : null,
-      hoursLeft: measured && weekPace > 0 ? leftUnits / weekPace : null,
+      /** Hours of use left, at the pace of a typical working hour (learned) or of the last hours (until then). */
+      hoursLeft: prof?.activeRate ? leftUnits / prof.activeRate : measured && weekPace > 0 ? leftUnits / weekPace : null,
     },
     forecast: fc,
+    verdict: verdictOf(state, cfg, now, model, fc),
+    learning: {
+      basis: model?.basis ?? null,
+      observedDays,
+      confidence: prof?.confidence ?? 'baixa',
+      typicalHoursPerDay: prof?.activeHoursPerDay ?? null,
+      unitsPerDay: prof?.unitsPerDay ?? null,
+      activeRate: prof?.activeRate ?? null,
+      ratio5: prof?.ratio5 ?? null,
+      grid: prof?.grid ?? null,
+    },
     today: todayTotals,
     live: {
       sessions: live.length,

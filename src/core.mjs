@@ -18,10 +18,12 @@ import { usageFromStatusline } from './api.mjs';
 import { expiresAtS, hasRefresh, loginOnly, oauth, planOf, tokenHash, withLogin } from './blob.mjs';
 import { readOauthAccount, writeOauthAccount } from './claudejson.mjs';
 import { RETURN_GAP_S, SWITCH_GAP_S, decide, effPct, fiveHourOf, fiveHourTriggerOf, nextCandidate, priority, triggerOf, weeklyOf, zoneOf } from './decide.mjs';
-import { addActivity, insights, recordHistory, setActive, totalsDelta } from './insights.mjs';
+import { addActivity, capacityOf, insights, recordHistory, setActive, totalsDelta } from './insights.mjs';
+import { consume, forget, observe } from './learn.mjs';
 import { MAIN_SERVICE, serviceForDir } from './keychain.mjs';
 import { LoginJob } from './logins.mjs';
 import { CONFIG_KEYS, PCT_KEYS, backupPath, loadState } from './state.mjs';
+import { currentVersion, readRecord, updateInProgress } from './update.mjs';
 import { Mutex, nowS, readJson, writeJsonAtomic } from './util.mjs';
 
 /** Without a readable ~/.claude.json, a write-back of an account switched out this recently is taken as stale. */
@@ -44,7 +46,9 @@ const REDO_WINDOW_S = 600;
 const MAX_REDO = 3;
 const MAX_EVENTS = 300;
 /** Bumped whenever the dashboard needs something new from the agent; the page compares it with its own. */
-export const API_VERSION = 3;
+export const API_VERSION = 4;
+/** The version this agent runs, read once: an update restarts the agent. */
+const AGENT_VERSION = currentVersion();
 /** Two resets_at closer than this are the same week. */
 const SAME_RESET_S = 120;
 /** A session still answering from the previous account this long after a switch is reported. */
@@ -205,6 +209,7 @@ export class Rodizio {
   /** One pass: who is in Claude Code, new readings, then the decision. */
   tick() {
     return this.locked(async () => {
+      observe(this.state, this.now()); // the agent was watching: an hour with nothing spent is learned as idle
       try {
         await this.reconcile();
         this.lastWarn.delete('reconcile');
@@ -586,6 +591,9 @@ export class Rodizio {
       source,
     };
     recordHistory(this.state, acc, at);
+    // Only a reading that measured the week itself: a week carried over from an older one would move the baseline's
+    // time without its value, and the next rise would land in the last few minutes.
+    if (u.weekly) consume(this.state, acc.id, capacityOf(acc), { weekly: u.weekly, fiveHour: u.fiveHour ?? null, at });
   }
 
   async pollUsage({ force = false } = {}) {
@@ -935,6 +943,7 @@ export class Rodizio {
       delete this.state.recentFrom[id];
       delete this.state.history[id];
       delete this.state.activity[id];
+      forget(this.state, id);
       this.config.order = this.config.order.filter((x) => x !== id);
       this.saveConfig();
       this.event('conta', `${acc.email} saiu do rodízio.`);
@@ -1036,8 +1045,11 @@ export class Rodizio {
     for (const k of CONFIG_KEYS) config[k] = cfg[k];
     const d = this.decision;
     const ho = st.handover;
+    const upd = readRecord(this.p.home);
     return {
       api: API_VERSION,
+      version: AGENT_VERSION,
+      update: { status: upd.status ?? null, latest: upd.latest ?? null, checkedAt: upd.checkedAt ?? null, why: upd.why ?? null, last: upd.last ?? null, running: !!updateInProgress(this.p.home) },
       now,
       port: cfg.port,
       home: displayPath(this.p.home),
@@ -1058,6 +1070,8 @@ export class Rodizio {
       pinned: !!st.pinned,
       rotation: info.rotation,
       forecast: info.forecast,
+      verdict: info.verdict,
+      learning: info.learning,
       today: info.today,
       live: info.live,
       week: info.week,

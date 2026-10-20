@@ -11,6 +11,7 @@ import { findClaude } from './claudecli.mjs';
 import { MacKeychain, serviceForDir } from './keychain.mjs';
 import { claudeSettingsPath, paths } from './paths.mjs';
 import { ensureConfig, loadState } from './state.mjs';
+import { maybeUpdate } from './update.mjs';
 import { readJson, writeJsonAtomic } from './util.mjs';
 
 export const LABEL = 'local.rodizio.agente';
@@ -143,11 +144,16 @@ async function confirmedDown(port, tries = 3, gapMs = 5000) {
 }
 
 export async function health(port, timeoutMs = 3000) {
+  return !!(await healthOf(port, timeoutMs));
+}
+
+/** What the agent says about itself ({ok, version, pid}), or null when it does not answer. */
+async function healthOf(port, timeoutMs = 3000) {
   try {
     const r = await fetch(`http://127.0.0.1:${port}/healthz`, { signal: AbortSignal.timeout(timeoutMs) });
-    return r.status === 200;
+    return r.status === 200 ? await r.json() : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -157,6 +163,53 @@ async function waitHealthy(port, ms = 10_000) {
     sleep(500);
   }
   return false;
+}
+
+/**
+ * The agent back on the code in this folder: its LaunchAgent rewritten when the code expects another one (that reload
+ * restarts it), otherwise restarted in place. Resolves to whether it answers again.
+ */
+export async function restartAgent({ waitMs = 40_000 } = {}) {
+  const config = readJson(paths().config, null);
+  if (!config?.port) return false;
+  if (!ensureService(LABEL, plists()[LABEL])) spawnSync('launchctl', ['kickstart', '-k', `${domain()}/${LABEL}`], { stdio: 'ignore' });
+  return waitHealthy(config.port, waitMs);
+}
+
+/**
+ * The watchdog's LaunchAgent as this code expects it. Called by the agent when it starts: the watchdog never reloads
+ * itself (that would stop it mid-run), so after an update it is the agent that puts the new one in place.
+ */
+export function syncWatchdog() {
+  if (!fs.existsSync(plistPath(WATCH_LABEL))) return null; // not installed: nothing to keep in sync
+  return ensureService(WATCH_LABEL, plists()[WATCH_LABEL]);
+}
+
+/** How long the new version must keep the same process up after it first answers. */
+const SETTLE_MS = 30_000;
+
+/**
+ * Runs `rodizio reiniciar` with the code now in the folder, in its own process, so a new version restarts itself
+ * (and rewrites its LaunchAgent if it needs another). Whether it worked is not taken from that code: the updater
+ * itself waits for `version` to answer (on the port in the config, which the new agent may have changed), and for the
+ * same process to still answer a while later, so one that starts and then falls over counts as failed.
+ */
+export async function restartWithNewCode(version, { settleMs = SETTLE_MS } = {}) {
+  spawnSync(stableNode(), [path.join(REPO, 'bin', 'rodizio'), 'reiniciar'], { stdio: 'ignore', timeout: 90_000 });
+  const answering = async (ms) => {
+    for (let t = 0; t < ms; t += 1000) {
+      const port = readJson(paths().config, null)?.port;
+      const h = port ? await healthOf(port, 1000) : null;
+      if (h && (!version || h.version === version)) return h;
+      sleep(1000);
+    }
+    return null;
+  };
+  const first = await answering(60_000);
+  if (!first) return false;
+  await new Promise((r) => setTimeout(r, settleMs));
+  const again = await answering(5000);
+  return !!again && again.pid === first.pid;
 }
 
 // -------------------------------------------------------------------------------------------- status line
@@ -358,6 +411,15 @@ export async function doctor({ repair = false, watch = false, out = console.log 
   } else {
     note(alive, alive ? `painel respondendo em ${dashboardUrl(config)}` : `painel em 127.0.0.1:${config.port}: não responde`);
   }
+  if (watch) {
+    // A new published version, when it is time to look and automatic updates are on (see update.mjs for the guards).
+    // Also with the agent down: the version that fixes it has to be able to arrive.
+    const r = await maybeUpdate({ home: p.home, auto: config.autoUpdate !== false, restart: restartWithNewCode, log: (m) => note(true, `atualização: ${m}`) });
+    if (r.status === 'atualizado') note(true, `atualização: agora em ${r.record.current}`);
+    else if (r.status === 'falhou') note(false, `atualização: ${r.record.why}`);
+    else if (r.status === 'disponivel') note(true, `atualização: ${r.record.latest} disponível (automática desligada)`);
+    else if (r.status === 'ocupado') note(true, 'atualização: outra já está em andamento');
+  }
   if (!watch) {
     if (statusLineOk()) note(true, 'linha de status do Claude Code');
     else if (repair) note(true, setStatusLine(stableNode()).replace(/^[✓!] /, 'linha de status: '));
@@ -376,7 +438,7 @@ function report(lines, out, watch) {
   const stamp = new Date().toISOString();
   for (const l of lines) {
     // The watchdog writes only repairs and problems, so its log stays short.
-    if (watch && l.good && !/religado|instalado|atualizado/.test(l.text)) continue;
+    if (watch && l.good && !/religado|instalado|atualizado|atualização/.test(l.text)) continue;
     out(`${watch ? `${stamp} ` : ''}${l.good ? '✓' : '✗'} ${l.text}`);
   }
   const bad = lines.filter((l) => !l.good).length;

@@ -2,13 +2,17 @@
 // `rodizio painel` opens (#t=…, never sent to the server) and stays in that browser; the page itself carries no
 // secret, so any local program may fetch it. The Host header must be ours, which stops DNS rebinding.
 
+import { spawn } from 'node:child_process';
 import { timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
+import { currentVersion } from './update.mjs';
 
 const PAGE = fileURLToPath(new URL('../web/index.html', import.meta.url));
 const MAX_BODY = 64 * 1024;
+/** Read once: after an update, the health check tells the new code (and process) from the one it replaced. */
+const VERSION = currentVersion();
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy':
@@ -53,10 +57,22 @@ function readBody(req) {
   });
 }
 
+const CLI = fileURLToPath(new URL('../bin/rodizio', import.meta.url));
+
+/** `rodizio …` detached from the agent: it may restart the agent and must outlive it. */
+function spawnCli(args) {
+  const child = spawn(process.execPath, [CLI, ...args], { detached: true, stdio: 'ignore' });
+  child.on('error', () => {});
+  child.unref();
+}
+
 export function routes(core) {
   return [
     ['GET', /^\/api\/state$/, () => core.view()],
     ['POST', /^\/api\/refresh$/, async () => (await core.refresh(), core.view())],
+    // Looking is quick (only the tag names); installing restarts the agent, so it runs in a process of its own.
+    ['POST', /^\/api\/update\/check$/, () => (spawnCli(['atualizar', '--verificar']), { started: true })],
+    ['POST', /^\/api\/update\/apply$/, () => (spawnCli(['atualizar']), { started: true })],
     ['POST', /^\/api\/config$/, async (_, body) => (await core.setConfig(body), core.view())],
     ['POST', /^\/api\/order$/, async (_, body) => (await core.setOrder(body.ids), core.view())],
     ['POST', /^\/api\/accounts\/connect$/, (_, body) => core.startLogin({ email: body.email || null })],
@@ -145,7 +161,7 @@ export function createServer(core, { port, token }) {
       return res.end(fs.readFileSync(PAGE, 'utf8'));
     }
     // No secret in these: the watchdog's check, and what lets the browser install the dashboard as an app.
-    if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true });
+    if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true, version: VERSION, pid: process.pid });
     if (req.method === 'GET' && url.pathname === '/manifest.webmanifest') {
       res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'application/manifest+json' });
       return res.end(JSON.stringify(MANIFEST));

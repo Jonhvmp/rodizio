@@ -13,8 +13,10 @@ import { Rodizio } from './core.mjs';
 import { MacKeychain } from './keychain.mjs';
 import { notifyMac } from './notify.mjs';
 import { claudeJsonPath, paths } from './paths.mjs';
+import { syncWatchdog } from './install.mjs';
 import { createServer } from './server.mjs';
 import { ensureConfig, pickPort } from './state.mjs';
+import { readRecord, updateInProgress, writeRecord } from './update.mjs';
 import { writeJsonAtomic } from './util.mjs';
 
 const TICK_MS = 10_000;
@@ -157,6 +159,37 @@ function watch(dir, filter, onEvent) {
   }
 }
 
+const UPDATE_POLL_MS = 5000;
+const UPDATE_WAIT_MS = 20 * 60_000;
+
+/**
+ * After an update: the watchdog's LaunchAgent as the new code expects it, and the news in the history, once. Both
+ * wait for the updater to finish: it is still checking this agent (and may be the watchdog, which reloading would
+ * stop), and it writes the news only then.
+ */
+function afterUpdate(core, p) {
+  const started = Date.now();
+  const done = () => {
+    try {
+      const changed = syncWatchdog();
+      if (changed) log.info(`vigia ${changed} para esta versão`);
+    } catch (e) {
+      log.error(`vigia: ${e.message}`);
+    }
+    const rec = readRecord(p.home);
+    if (rec.last && !rec.last.seen) {
+      const l = rec.last;
+      core.event(l.ok ? 'info' : 'erro', l.ok ? `Atualizado de ${l.from} para ${l.to}.${l.notes ? ` ${l.notes.split('\n')[0]}` : ''}` : `A atualização para ${l.to} não deu certo: ${l.why}`);
+      writeRecord(p.home, { last: { ...l, seen: true } });
+    }
+  };
+  const wait = () => {
+    if (updateInProgress(p.home) && Date.now() - started < UPDATE_WAIT_MS) setTimeout(wait, UPDATE_POLL_MS).unref();
+    else done();
+  };
+  wait();
+}
+
 export async function startAgent({ demo = process.env.RODIZIO_DEMO === '1' } = {}) {
   const p = paths();
   for (const d of [p.home, p.accounts, p.samples, p.logs]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
@@ -171,6 +204,7 @@ export async function startAgent({ demo = process.env.RODIZIO_DEMO === '1' } = {
     ? (await import('./demo.mjs')).demoDeps(p)
     : { kc: new MacKeychain(), api: createApi(), cli: new ClaudeCli(), claudeJson: claudeJsonPath(), notify: notifyMac };
   const core = new Rodizio({ paths: p, config, log, ...deps });
+  if (!demo) afterUpdate(core, p);
   const server = await listen(core, config, p);
   log.info(`rodízio ${demo ? '(demonstração) ' : ''}no ar: http://rodizio.localhost:${config.port}/`);
 

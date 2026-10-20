@@ -99,7 +99,9 @@ test('a fixed, easy address and the pieces that make the dashboard installable, 
   assert.equal((await call('GET', '/api/state', { headers: { Host: `rodizio.localhost:${port}` } })).status, 200);
   const h = await call('GET', '/healthz', { headers: { 'X-Rodizio-Token': '' } });
   assert.equal(h.status, 200);
-  assert.deepEqual(h.json(), { ok: true });
+  assert.equal(h.json().ok, true);
+  assert.match(h.json().version, /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(Object.keys(h.json()).sort(), ['ok', 'pid', 'version']);
   const m = await call('GET', '/manifest.webmanifest', { headers: { 'X-Rodizio-Token': '' } });
   assert.equal(m.json().display, 'standalone');
   assert.ok(!m.text.includes(token));

@@ -1,0 +1,4 @@
+# Chaves que podem assinar versões do rodízio (formato allowed_signers do OpenSSH).
+# Uma instalação só aceita uma versão nova assinada por uma chave desta lista, lida da versão JÁ instalada.
+# Para trocar de chave: publique uma versão assinada pela chave antiga que acrescente a nova aqui.
+122692601+Jonhvmp@users.noreply.github.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINkPpSsO3yFQoIaqFmEvs1I2rmj426BeAUw4nJYjJzJO
