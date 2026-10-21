@@ -8,6 +8,8 @@ outro programa, site ou pessoa consiga usá-lo por você.
 | O quê | Onde | Quem consegue ler |
 |---|---|---|
 | Login de cada conta | Keychain do macOS, na entrada que o próprio Claude Code cria para a pasta da conta (`Claude Code-credentials-<hash>`) | O seu usuário do Mac, como o login do próprio Claude Code |
+| Login de cada conta, no Linux | O `.credentials.json` que o próprio Claude Code usa lá: `~/.claude/` para a conta em uso e a pasta de cada conta em `~/.rodizio/contas/` (arquivos 0600, pastas 0700) | O seu usuário daquela máquina, como o login do próprio Claude Code |
+| Outras máquinas | `~/.rodizio/maquinas.json`: só os nomes dos hosts SSH | O seu usuário |
 | Contas, uso, histórico, regras | `~/.rodizio/` (pasta 0700, arquivos 0600) | O seu usuário do Mac |
 | Chave de acesso do painel | `~/.rodizio/config.json` e o armazenamento local do navegador que abriu o painel | O seu usuário do Mac |
 
@@ -23,6 +25,14 @@ Só para a Anthropic, com o token de cada conta, e sempre se identificando como 
 
 E para a origem do clone (o GitHub), a cada 6 h, só para ver se há versão nova: `git ls-remote` com os nomes das
 tags e, quando há uma, o `git fetch` dela. Dá para desligar em **Regras → Atualizar sozinho**.
+
+Só se você adicionar **outras máquinas**: o `ssh` do sistema, com o seu `~/.ssh/config` e as suas chaves, para cada host
+da lista, a cada minuto. Lá roda só `rodizio status --json` (e `rodizio painel --url` quando você pede para abrir o
+painel de lá). O `ssh` roda com `BatchMode`: nunca pede senha nem aceita sozinho uma chave de host desconhecida. O nome do
+host é conferido antes (nunca começa com `-`, nunca tem espaço ou caractere de shell), então não vira opção do `ssh`.
+Daquela máquina, só um resumo chega ao painel: e-mail, plano, situação e uso de cada conta. O painel dela abre aqui por
+um túnel do próprio `ssh` (`-L` na mesma porta, para o endereço e a verificação de `Host` serem os dela), com a chave que
+ela mesma dá pelo SSH; nada passa a escutar fora de `127.0.0.1`.
 
 ## Atualizações automáticas
 

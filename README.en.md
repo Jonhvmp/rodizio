@@ -51,8 +51,15 @@ cloud, no third-party server, no account to create, no telemetry, no npm depende
 
 ## Requirements
 
-macOS, Node.js 20+, [Claude Code](https://code.claude.com/docs) logged into one of your accounts, two or
-more Claude Pro or Max accounts of your own. Optional: Brave or Chrome, so other logins open in a private window.
+macOS (or Linux with systemd, see below), Node.js 20+, [Claude Code](https://code.claude.com/docs) logged into one of
+your accounts, two or more Claude Pro or Max accounts of your own. Optional: Brave or Chrome, so other logins open in a
+private window.
+
+On a Linux server, the same `node bin/rodizio instalar` sets up systemd user units, and logins live in the
+`.credentials.json` Claude Code itself uses there. It has no browser: add the host (as named in your `~/.ssh/config`)
+under **Outras máquinas** in your Mac's dashboard to see its baton and usage, and **Abrir painel de lá** opens its
+dashboard on your Mac through an SSH tunnel; connecting an account there ends with pasting the long code from the
+authorization page.
 
 ## Install
 

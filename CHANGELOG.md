@@ -1,5 +1,14 @@
 # Mudanças
 
+## Próxima (ainda não publicada)
+
+- **Linux**: o rodízio roda também num Linux com systemd (um servidor na nuvem, por exemplo). O login de cada conta
+  fica no `.credentials.json` que o próprio Claude Code usa lá (0600); agente e vigia viram units de usuário do
+  systemd; o login, sem navegador, mostra o link oficial e você cola o código longo no painel.
+- **Outras máquinas**: no painel do Mac, adicione um host do seu `~/.ssh/config` com o rodízio instalado e veja de lá
+  quem está com o bastão e o uso de cada conta. **Abrir painel de lá** abre o painel daquela máquina aqui, por um
+  túnel SSH. `rodizio status --json`, `rodizio painel --url` e `rodizio painel --maquina <host>`.
+
 ## 0.5.0
 
 - **A previsão aprende o seu uso**: quanto você gasta em cada hora da semana (noites e fins de semana parados

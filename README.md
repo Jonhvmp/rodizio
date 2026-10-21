@@ -52,7 +52,7 @@ O código é pequeno e sem dependências justamente para você poder ler o que e
 
 ## Requisitos
 
-- macOS (usa o Keychain e o launchd)
+- macOS (usa o Keychain e o launchd), ou Linux com systemd (veja [Num servidor Linux](#num-servidor-linux))
 - Node.js 20 ou mais novo
 - [Claude Code](https://code.claude.com/docs) instalado e com login feito em uma das contas
 - Duas ou mais contas Claude Pro ou Max, suas
@@ -105,6 +105,27 @@ rodizio atualizar           # instala a versão publicada mais nova, se houver
 
 O painel fica sempre em `http://rodizio.localhost:<porta>`. Pelo menu do Brave ou do Chrome, **Instalar Rodízio** abre
 o painel numa janela própria, como um app.
+
+## Num servidor Linux
+
+Para quem também usa o Claude Code num servidor (uma máquina na nuvem, por exemplo), o rodízio roda lá do mesmo jeito,
+com os mesmos comandos:
+
+```bash
+git clone https://github.com/Jonhvmp/rodizio.git ~/rodizio && cd ~/rodizio && node bin/rodizio instalar
+```
+
+- O login de cada conta fica no `.credentials.json` que o próprio Claude Code usa no Linux, só para o seu usuário.
+- Agente e vigia viram units de usuário do systemd. Para continuarem rodando sem sessão aberta, o `instalar` confere o
+  *linger* e diz o comando se faltar (`sudo loginctl enable-linger $USER`).
+- Lá não há navegador: o painel de lá abre no seu Mac. No painel do Mac, em **Outras máquinas**, adicione o host como
+  está no seu `~/.ssh/config` (com chave, sem senha). O card mostra quem está com o bastão lá e o uso de cada conta, e
+  **Abrir painel de lá** abre o painel daquela máquina no seu navegador, por um túnel SSH.
+- Para conectar uma conta lá, use **Conectar conta** no painel de lá: o link do login oficial abre no seu navegador e,
+  no fim, você cola no painel o código longo que a página de autorização mostra.
+
+Cada máquina guarda os próprios logins e decide sozinha. Como o uso é da conta, não da máquina, as duas veem os mesmos
+números e, com as mesmas regras e a mesma ordem, escolhem a mesma conta.
 
 ## Como ele decide
 
