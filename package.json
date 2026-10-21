@@ -1,6 +1,6 @@
 {
   "name": "rodizio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Rodízio local de várias contas do Claude Code: troca de conta perto do fim da semana ou da janela de 5 h, painel ao vivo em 127.0.0.1, no Mac ou num servidor Linux, e nada sai da sua máquina.",
   "private": true,
   "type": "module",
