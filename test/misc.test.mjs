@@ -92,10 +92,11 @@ test('login: only official https addresses, private window when available', () =
   assert.equal(loginUrl('https://claude.ai.evil.com/x'), null);
   assert.equal(loginUrl('http://claude.ai/x'), null);
   assert.equal(loginUrl('https://user:pw@claude.ai/x'), null);
-  const s = browserScript("/tmp/it's/url", true);
+  // the macOS script, wherever the tests run (on Linux the agent offers only the link with a code: see linux.test.mjs)
+  const s = browserScript("/tmp/it's/url", true, '/Applications', 'darwin');
   assert.match(s, /printf '%s\\n' "\$1" > '\/tmp\/it'\\''s\/url'/);
   assert.match(s, /open -na 'Brave Browser' --args --incognito "\$1"/);
-  assert.ok(!browserScript('/tmp/u', false).includes('incognito'));
+  assert.ok(!browserScript('/tmp/u', false, '/Applications', 'darwin').includes('incognito'));
 });
 
 test('child processes do not inherit the calling session', () => {
