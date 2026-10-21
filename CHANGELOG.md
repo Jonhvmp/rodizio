@@ -1,6 +1,6 @@
 # Mudanças
 
-## Próxima (ainda não publicada)
+## 0.6.0
 
 - **Linux**: o rodízio roda também num Linux com systemd (um servidor na nuvem, por exemplo). O login de cada conta
   fica no `.credentials.json` que o próprio Claude Code usa lá (0600); agente e vigia viram units de usuário do
