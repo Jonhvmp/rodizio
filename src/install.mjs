@@ -1,6 +1,7 @@
-// Installs and keeps installed: the agent as a LaunchAgent, a watchdog LaunchAgent that restarts a hung agent, the
-// status line in ~/.claude/settings.json, the `rodizio` command and a Rodízio app to open the dashboard from Spotlight
-// or the Dock. `doctor` checks all of it and, with `repair`, puts back what is missing.
+// Installs and keeps installed: the agent as a service that starts with the session and comes back when it exits (a
+// LaunchAgent on macOS, a systemd user unit on Linux), a watchdog that restarts a hung agent, the status line in
+// ~/.claude/settings.json, the `rodizio` command and, on macOS, a Rodízio app to open the dashboard from Spotlight or
+// the Dock. `doctor` checks all of it and, with `repair`, puts back what is missing.
 
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findClaude } from './claudecli.mjs';
-import { MacKeychain, serviceForDir } from './keychain.mjs';
+import { CREDENTIALS_FILE, serviceForDir, systemKeychain } from './keychain.mjs';
 import { claudeSettingsPath, paths } from './paths.mjs';
 import { ensureConfig, loadState } from './state.mjs';
 import { maybeUpdate } from './update.mjs';
@@ -23,7 +24,16 @@ const plistPath = (label = LABEL) => path.join(launchAgents(), `${label}.plist`)
 const cliLink = () => path.join(os.homedir(), '.local', 'bin', 'rodizio');
 export const appPath = () => path.join(os.homedir(), 'Applications', 'Rodízio.app');
 const domain = () => `gui/${process.getuid()}`;
+/** Linux: systemd user units instead of LaunchAgents, and no app (a server has no Dock to put it in). */
+const SYSTEMD = process.platform === 'linux';
+/** The unit systemd starts and watches, per service: the agent itself; for the watchdog, the timer that runs it. */
+const MAIN_UNIT = { [LABEL]: 'rodizio-agente.service', [WATCH_LABEL]: 'rodizio-vigia.timer' };
+const UNIT_FILES = { [LABEL]: ['rodizio-agente.service'], [WATCH_LABEL]: ['rodizio-vigia.service', 'rodizio-vigia.timer'] };
+const unitDir = () => path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'systemd', 'user');
 const xml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** systemd's quoting: within "…", backslashes and quotes escaped; % doubled, or systemd reads it as a specifier. */
+const sdq = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
+const sdPath = (s) => String(s).replace(/%/g, '%%');
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -74,6 +84,58 @@ export function watchPlist({ node, logFile, pathEnv, home }) {
   return plistXml({ label: WATCH_LABEL, args: [node, path.join(REPO, 'bin', 'rodizio'), 'doctor', '--vigia'], logFile, pathEnv, home, every: WATCH_EVERY_S });
 }
 
+function unitEnv({ pathEnv, home }) {
+  return `Environment=${sdq(`PATH=${pathEnv}`)}\nEnvironment=${sdq(`HOME=${home}`)}`;
+}
+
+/** Linux: the agent as a systemd user service, started with the user's manager and restarted whenever it exits. */
+export function agentUnit({ node, script, logFile, pathEnv, home }) {
+  return `[Unit]
+Description=rodízio: o agente (revezamento das contas do Claude Code)
+After=network-online.target
+
+[Service]
+ExecStart=${sdq(node)} ${sdq(script)}
+Restart=always
+RestartSec=10
+# Only the agent itself on a restart: an update or a login it started in a process of its own must outlive it.
+KillMode=process
+${unitEnv({ pathEnv, home })}
+StandardOutput=append:${sdPath(logFile)}
+StandardError=append:${sdPath(logFile)}
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+/** Linux: the watchdog as a oneshot service that a timer runs every few minutes (the LaunchAgent's StartInterval). */
+export function watchUnits({ node, logFile, pathEnv, home }) {
+  return {
+    'rodizio-vigia.service': `[Unit]
+Description=rodízio: o vigia (religa o agente se ele parar de responder)
+
+[Service]
+Type=oneshot
+ExecStart=${sdq(node)} ${sdq(path.join(REPO, 'bin', 'rodizio'))} doctor --vigia
+${unitEnv({ pathEnv, home })}
+StandardOutput=append:${sdPath(logFile)}
+StandardError=append:${sdPath(logFile)}
+`,
+    'rodizio-vigia.timer': `[Unit]
+Description=rodízio: o vigia a cada ${WATCH_EVERY_S / 60} minutos
+
+[Timer]
+OnActiveSec=60
+OnUnitActiveSec=${WATCH_EVERY_S}
+AccuracySec=30
+
+[Install]
+WantedBy=timers.target
+`,
+  };
+}
+
 const installFile = () => path.join(paths().home, 'instalacao.json');
 
 /**
@@ -94,19 +156,46 @@ function installEnv({ refresh = false } = {}) {
   return env;
 }
 
-function plists(opts) {
+/** Each service as the files that define it ({path: content}): a plist on macOS; units on Linux. */
+function services(opts) {
   const p = paths();
   const { node, pathEnv } = installEnv(opts);
   const common = { node, pathEnv, home: os.homedir() };
-  return {
-    [LABEL]: plist({ ...common, script: path.join(REPO, 'src', 'main.mjs'), logFile: path.join(p.logs, 'agente.log') }),
-    [WATCH_LABEL]: watchPlist({ ...common, logFile: path.join(p.logs, 'vigia.log') }),
-  };
+  const agent = { ...common, script: path.join(REPO, 'src', 'main.mjs'), logFile: path.join(p.logs, 'agente.log') };
+  const watchdog = { ...common, logFile: path.join(p.logs, 'vigia.log') };
+  if (SYSTEMD) {
+    const inDir = (units) => Object.fromEntries(Object.entries(units).map(([name, content]) => [path.join(unitDir(), name), content]));
+    return { [LABEL]: inDir({ [MAIN_UNIT[LABEL]]: agentUnit(agent) }), [WATCH_LABEL]: inDir(watchUnits(watchdog)) };
+  }
+  return { [LABEL]: { [plistPath(LABEL)]: plist(agent) }, [WATCH_LABEL]: { [plistPath(WATCH_LABEL)]: watchPlist(watchdog) } };
 }
 
-const isLoaded = (label) => spawnSync('launchctl', ['print', `${domain()}/${label}`], { stdio: 'ignore' }).status === 0;
+/** Where a service's files are, without computing their content (removing must not depend on node or claude). */
+const serviceFiles = (label) => (SYSTEMD ? UNIT_FILES[label].map((n) => path.join(unitDir(), n)) : [plistPath(label)]);
 
+const same = (files) => Object.entries(files).every(([f, c]) => fs.existsSync(f) && fs.readFileSync(f, 'utf8') === c);
+const present = (files) => Object.keys(files).some((f) => fs.existsSync(f));
+
+/** systemctl for this user's manager; a process started outside a login session may lack the variable that finds it. */
+function systemctl(args, opts = {}) {
+  const env = { ...process.env, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}` };
+  return spawnSync('systemctl', ['--user', ...args], { encoding: 'utf8', env, ...opts });
+}
+
+const isLoaded = (label) =>
+  SYSTEMD
+    ? systemctl(['is-active', '--quiet', MAIN_UNIT[label]], { stdio: 'ignore' }).status === 0
+    : spawnSync('launchctl', ['print', `${domain()}/${label}`], { stdio: 'ignore' }).status === 0;
+
+/** Loads a service from its files (again, if it was loaded: a running one keeps the old definition otherwise). */
 function bootstrap(label) {
+  if (SYSTEMD) {
+    systemctl(['daemon-reload'], { stdio: 'ignore' });
+    const r = systemctl(['enable', MAIN_UNIT[label]]);
+    if (r.status !== 0) throw new Error(`systemctl enable falhou (${MAIN_UNIT[label]}): ${(r.stderr || r.stdout).trim()}`);
+    systemctl(['restart', MAIN_UNIT[label]], { stdio: 'ignore' });
+    return;
+  }
   spawnSync('launchctl', ['bootout', `${domain()}/${label}`], { stdio: 'ignore' });
   let r;
   for (let i = 0; i < 5; i++) {
@@ -117,15 +206,30 @@ function bootstrap(label) {
   throw new Error(`launchctl bootstrap falhou (${label}): ${(r.stderr || r.stdout).trim()}`);
 }
 
-/** Writes a LaunchAgent when it differs from what it should be, and makes sure it is loaded. */
-function ensureService(label, content) {
-  const file = plistPath(label);
-  fs.mkdirSync(launchAgents(), { recursive: true });
-  const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
-  if (current !== content) {
-    fs.writeFileSync(file, content);
+/** Restarts a loaded service in place. */
+function kick(label) {
+  if (SYSTEMD) systemctl(['restart', MAIN_UNIT[label]], { stdio: 'ignore' });
+  else spawnSync('launchctl', ['kickstart', '-k', `${domain()}/${label}`], { stdio: 'ignore' });
+}
+
+/** Stops a service and keeps it from starting again (its files stay until removed). */
+function unload(label) {
+  if (SYSTEMD) {
+    systemctl(['disable', '--now', MAIN_UNIT[label]], { stdio: 'ignore' });
+    if (label === WATCH_LABEL) systemctl(['stop', 'rodizio-vigia.service'], { stdio: 'ignore' });
+  } else spawnSync('launchctl', ['bootout', `${domain()}/${label}`], { stdio: 'ignore' });
+}
+
+/** Writes a service's files when they differ from what they should be, and makes sure it is loaded. */
+function ensureService(label, files) {
+  if (!same(files)) {
+    const existed = present(files);
+    for (const [file, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }
     bootstrap(label);
-    return current === null ? 'instalado' : 'atualizado';
+    return existed ? 'atualizado' : 'instalado';
   }
   if (!isLoaded(label)) {
     bootstrap(label);
@@ -133,6 +237,17 @@ function ensureService(label, content) {
   }
   return null;
 }
+
+/** Without lingering, systemd stops a user's services when the last session closes: a server would lose the agent. */
+function lingers() {
+  const r = spawnSync('loginctl', ['show-user', os.userInfo().username, '-p', 'Linger', '--value'], { encoding: 'utf8' });
+  return r.status === 0 && r.stdout.trim() === 'yes';
+}
+
+const lingerText = (ok) =>
+  ok
+    ? 'agente segue rodando sem sessão aberta (linger ligado)'
+    : `sem "linger", o systemd para o agente quando a última sessão fecha: rode \`sudo loginctl enable-linger ${os.userInfo().username}\``;
 
 /** Down only after a few failed checks some seconds apart: one miss may be the agent starting or a busy moment. */
 async function confirmedDown(port, tries = 3, gapMs = 5000) {
@@ -172,17 +287,17 @@ async function waitHealthy(port, ms = 10_000) {
 export async function restartAgent({ waitMs = 40_000 } = {}) {
   const config = readJson(paths().config, null);
   if (!config?.port) return false;
-  if (!ensureService(LABEL, plists()[LABEL])) spawnSync('launchctl', ['kickstart', '-k', `${domain()}/${LABEL}`], { stdio: 'ignore' });
+  if (!ensureService(LABEL, services()[LABEL])) kick(LABEL);
   return waitHealthy(config.port, waitMs);
 }
 
 /**
- * The watchdog's LaunchAgent as this code expects it. Called by the agent when it starts: the watchdog never reloads
+ * The watchdog's service as this code expects it. Called by the agent when it starts: the watchdog never reloads
  * itself (that would stop it mid-run), so after an update it is the agent that puts the new one in place.
  */
 export function syncWatchdog() {
-  if (!fs.existsSync(plistPath(WATCH_LABEL))) return null; // not installed: nothing to keep in sync
-  return ensureService(WATCH_LABEL, plists()[WATCH_LABEL]);
+  if (!serviceFiles(WATCH_LABEL).some((f) => fs.existsSync(f))) return null; // not installed: nothing to keep in sync
+  return ensureService(WATCH_LABEL, services()[WATCH_LABEL]);
 }
 
 /** How long the new version must keep the same process up after it first answers. */
@@ -316,30 +431,42 @@ const appOk = () => fs.existsSync(path.join(appPath(), 'Contents', 'MacOS'));
 // ------------------------------------------------------------------------------------- install / remove
 
 export async function install({ statusline = true, out = console.log } = {}) {
-  if (process.platform !== 'darwin') throw new Error('o rodízio foi feito para macOS (Keychain e launchd)');
+  if (process.platform !== 'darwin' && !SYSTEMD) throw new Error('o rodízio roda no macOS (Keychain e launchd) e no Linux (systemd)');
   const p = paths();
   for (const d of [p.home, p.accounts, p.samples, p.logs]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
   const config = await ensureConfig(p);
-  const files = plists({ refresh: true });
+  const files = services({ refresh: true });
   for (const label of [LABEL, WATCH_LABEL]) {
-    fs.mkdirSync(launchAgents(), { recursive: true });
-    fs.writeFileSync(plistPath(label), files[label]);
+    for (const [file, content] of Object.entries(files[label])) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }
     bootstrap(label);
   }
-  out(`✓ agente rodando pelo launchd (${plistPath()})`);
-  out(`✓ vigia a cada ${WATCH_EVERY_S / 60} minutos: religa o agente se ele parar de responder (${plistPath(WATCH_LABEL)})`);
+  const [agentFile, watchFile] = [serviceFiles(LABEL)[0], serviceFiles(WATCH_LABEL).at(-1)];
+  out(`✓ agente rodando pelo ${SYSTEMD ? 'systemd do usuário' : 'launchd'} (${agentFile})`);
+  out(`✓ vigia a cada ${WATCH_EVERY_S / 60} minutos: religa o agente se ele parar de responder (${watchFile})`);
+  if (SYSTEMD) {
+    const ok = lingers();
+    out(`${ok ? '✓' : '!'} ${lingerText(ok)}`);
+  }
   out(statusline ? setStatusLine(stableNode()) : '· linha de status não mexida (--sem-linha-de-status)');
   out(linkCli());
+  if (SYSTEMD) {
+    out(`\nPainel: ${dashboardUrl(config)}  (aqui não há navegador: no Mac, adicione esta máquina em "Outras máquinas", no painel de lá; ou rode \`rodizio painel --url\` e abra por um túnel SSH)`);
+    return;
+  }
   out(createApp());
   out(`\nPainel: ${dashboardUrl(config)}  (rode \`rodizio painel\` ou abra o app Rodízio: ele já leva a chave de acesso)`);
 }
 
 export async function uninstall({ purge = false, out = console.log } = {}) {
   for (const label of [WATCH_LABEL, LABEL]) {
-    spawnSync('launchctl', ['bootout', `${domain()}/${label}`], { stdio: 'ignore' });
-    fs.rmSync(plistPath(label), { force: true });
+    unload(label);
+    for (const file of serviceFiles(label)) fs.rmSync(file, { force: true });
   }
-  out('✓ agente e vigia parados e removidos do launchd');
+  if (SYSTEMD) systemctl(['daemon-reload'], { stdio: 'ignore' });
+  out(`✓ agente e vigia parados e removidos do ${SYSTEMD ? 'systemd' : 'launchd'}`);
   const sl = removeStatusLine();
   if (sl) out(sl);
   if (cliOk()) {
@@ -355,10 +482,10 @@ export async function uninstall({ purge = false, out = console.log } = {}) {
     out(`· logins guardados e ${p.home} ficaram (use --apagar-tudo para tirar também)`);
     return;
   }
-  const kc = new MacKeychain();
+  const kc = systemKeychain({ accountsDir: p.accounts });
   for (const acc of Object.values(loadState(p).accounts)) {
     await kc.remove(serviceForDir(acc.dir));
-    out(`✓ login de ${acc.email} apagado do Keychain`);
+    out(`✓ login de ${acc.email} apagado ${SYSTEMD ? `(${CREDENTIALS_FILE} da pasta da conta)` : 'do Keychain'}`);
   }
   fs.rmSync(p.home, { recursive: true, force: true });
   out(`✓ ${p.home} apagado. O login que está no Claude Code agora continua lá.`);
@@ -383,29 +510,31 @@ export async function doctor({ repair = false, watch = false, out = console.log 
     }
     config = await ensureConfig(p);
   }
-  const files = plists({ refresh: repair && !watch });
-  // The watchdog only keeps the agent loaded: it never rewrites a LaunchAgent (that is `doctor --reparar` or
-  // `instalar`, run by you) and never reloads its own, which would stop it mid-run.
-  const services = watch ? [[LABEL, 'agente no launchd']] : [[LABEL, 'agente no launchd'], [WATCH_LABEL, 'vigia no launchd']];
-  for (const [label, name] of services) {
-    const current = fs.existsSync(plistPath(label)) ? fs.readFileSync(plistPath(label), 'utf8') : null;
+  const files = services({ refresh: repair && !watch });
+  // The watchdog only keeps the agent loaded: it never rewrites a service (that is `doctor --reparar` or `instalar`,
+  // run by you) and never reloads its own, which would stop it mid-run.
+  const manager = SYSTEMD ? 'systemd' : 'launchd';
+  const list = watch ? [[LABEL, `agente no ${manager}`]] : [[LABEL, `agente no ${manager}`], [WATCH_LABEL, `vigia no ${manager}`]];
+  for (const [label, name] of list) {
+    const there = present(files[label]);
     const loaded = isLoaded(label);
     if (watch) {
-      if (current === null) note(true, `${name}: ${ensureService(label, files[label])}`);
+      if (!there) note(true, `${name}: ${ensureService(label, files[label])}`);
       else if (!loaded) {
         bootstrap(label);
         note(true, `${name}: religado`);
       } else note(true, name);
       continue;
     }
-    const fine = current === files[label] && loaded;
-    if (fine) note(true, name);
+    const current = same(files[label]);
+    if (current && loaded) note(true, name);
     else if (repair) note(true, `${name}: ${ensureService(label, files[label]) ?? 'ok'}`);
-    else note(false, `${name}: ${current === null ? 'não instalado' : current !== files[label] ? 'desatualizado' : 'parado'}`);
+    else note(false, `${name}: ${!there ? 'não instalado' : !current ? 'desatualizado' : 'parado'}`);
   }
+  if (SYSTEMD && !watch) note(lingers(), lingerText(lingers()));
   let alive = repair ? !(await confirmedDown(config.port)) : await health(config.port);
   if (!alive && repair) {
-    spawnSync('launchctl', ['kickstart', '-k', `${domain()}/${LABEL}`], { stdio: 'ignore' });
+    kick(LABEL);
     alive = await waitHealthy(config.port);
     note(alive, alive ? `painel em 127.0.0.1:${config.port}: não respondia, religado` : `painel em 127.0.0.1:${config.port}: não volta; veja ${path.join(p.logs, 'agente.log')}`);
   } else {
@@ -427,7 +556,9 @@ export async function doctor({ repair = false, watch = false, out = console.log 
     if (cliOk()) note(true, 'comando rodizio');
     else if (repair) note(true, linkCli().replace(/^[✓!] /, ''));
     else note(false, 'comando rodizio: não está em ~/.local/bin');
-    if (appOk()) note(true, `app Rodízio em ${appPath()}`);
+    if (SYSTEMD) {
+      // no app on Linux: the dashboard is opened from another computer (Outras máquinas) or through a tunnel
+    } else if (appOk()) note(true, `app Rodízio em ${appPath()}`);
     else if (repair) note(true, createApp().replace(/^[✓!] /, ''));
     else note(false, 'app Rodízio: não criado');
   }

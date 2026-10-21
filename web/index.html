@@ -111,6 +111,15 @@ section.block { padding: 34px 0; border-bottom: 1px solid var(--grid); }
 .block-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .block-head h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
 .block-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+.machines { display: grid; gap: 14px; }
+.machine { border: 1px solid var(--grid); border-radius: 12px; padding: 14px 16px; }
+.machine > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.machine h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.m-state { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+.machine .who { margin: 12px 0 6px; font-size: 13.5px; }
+.m-acc { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--grid); font-size: 13px; flex-wrap: wrap; }
+.m-acc .lane-email { flex: 1 1 180px; min-width: 0; }
+.m-acc .num { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .legend { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .key { width: 14px; height: 6px; border-radius: 3px; display: inline-block; }
@@ -296,6 +305,14 @@ dialog::backdrop { background: rgba(8,8,8,.42); }
     <div class="lanes" id="lanes"></div>
   </section>
 
+  <section class="block" id="machines-block" hidden>
+    <div class="block-head">
+      <div><h2>Outras máquinas</h2><p>Outro computador com o rodízio (um servidor na nuvem, por exemplo), visto daqui pelo SSH.</p></div>
+      <button class="btn" data-act="machine-add">Adicionar máquina</button>
+    </div>
+    <div class="machines" id="machines"></div>
+  </section>
+
   <div class="split" id="lower">
     <section id="rules"></section>
     <section><h2>Histórico</h2><p class="muted" style="margin:0;font-size:13px">Trocas, contas e avisos.</p><ol class="events" id="events"></ol></section>
@@ -425,9 +442,11 @@ function render() {
   $('pattern-block').hidden = !has || !S.learning?.grid;
   $('lanes-block').hidden = !has;
   if (has) { renderKpis(); renderRelay(); renderPattern(); renderLanes(); }
+  renderMachines();
   if (!$('rules').contains(document.activeElement)) renderRules();
   renderEvents();
-  $('foot').innerHTML = `Logins no Keychain deste Mac · estado em <code>${esc(S.home)}</code> · painel só em <code>127.0.0.1:${S.port}</code><br>
+  const logins = mac() ? 'Logins no Keychain deste Mac' : 'Logins em <code>~/.claude</code> e nas pastas das contas, só deste usuário';
+  $('foot').innerHTML = `${logins} · estado em <code>${esc(S.home)}</code> · painel só em <code>127.0.0.1:${S.port}</code><br>
     Nada sai daqui além das chamadas oficiais à Anthropic: o login, a conferência de qual conta está em uso${S.config.useApi ? ' e a leitura de uso' : ''}.`;
   if (job) {
     // the live state carries the login too: no need to wait for the dialog's own polling
@@ -435,6 +454,56 @@ function render() {
     if (fresh) job = fresh;
     renderJob();
   }
+}
+
+/** Whether the agent runs on a Mac (an agent from before it said so did). Elsewhere there is no Keychain or browser. */
+const mac = () => !S?.platform || S.platform === 'darwin';
+
+function machineCard(m) {
+  const d = m.data;
+  const h = esc(m.host);
+  let dot = 'wait', text = 'consultando…';
+  if (m.ok) [dot, text] = ['on', `no ar · lido ${since(m.at)}`];
+  else if (m.at) [dot, text] = ['off', `${esc(m.error ?? 'sem resposta')}${m.seenAt ? ` · última leitura ${since(m.seenAt)}` : ''}`];
+  if (m.checking && m.at) text += ' · consultando…';
+  const holder = d?.accounts.find((a) => a.active);
+  const who = !d ? ''
+    : !d.accounts.length ? '<p class="who muted">Nenhuma conta no rodízio de lá ainda: abra o painel de lá e conecte.</p>'
+    : `<p class="who">${holder ? `Bastão com <b>${esc(holder.email)}</b>` : `O Claude Code de lá está em <b>${esc(d.mainEmail ?? 'nenhuma conta')}</b>, fora do rodízio`}${d.auto ? '' : ' · troca automática desligada'}${m.ok ? '' : ' <span class="muted">(última leitura)</span>'}</p>`;
+  const rows = (d?.accounts ?? []).map((a) => {
+    const [k, t] = STATUS[a.status] ?? ['', a.status ?? ''];
+    return `<div class="m-acc"><span class="lane-pos" style="background:var(--s${(a.slot ?? 0) % 8})">${a.position ?? ''}</span>
+      <span class="lane-email" title="${esc(a.email)}">${esc(a.email)}</span>${a.plan ? `<span class="plan">${esc(a.plan)}</span>` : ''}
+      <span class="tag">${icon(k)}${esc(t)}</span><span class="num">semana ${pct(a.weekly?.pct)} · 5 h ${pct(a.fiveHour?.pct)}</span></div>`;
+  }).join('');
+  return `<article class="machine"><header>
+      <div><h3>${h}</h3><p class="m-state"><span class="dot ${dot}"></span><span>${text}</span>${d?.version ? `<span>· versão ${esc(d.version)}</span>` : ''}</p></div>
+      <div class="actions"><button class="btn" data-act="machine-open" data-host="${h}" ${m.ok ? '' : 'disabled'}>Abrir painel de lá</button>
+        <button class="btn bare" data-act="machine-check" data-host="${h}" title="Consultar agora" aria-label="Consultar ${h} agora">↻</button>
+        <details class="menu"><summary aria-label="Mais ações">⋯</summary><div class="pop"><button class="btn danger" data-act="machine-remove" data-host="${h}">Tirar da lista</button></div></details></div>
+    </header>${who}${rows}</article>`;
+}
+
+function renderMachines() {
+  const list = S.machines ?? [];
+  // A Mac offers it; a server shows it only once it watches someone. An agent from before this sends no list at all.
+  $('machines-block').hidden = !S.machines || (!mac() && !list.length);
+  if ($('machines-block').hidden) return;
+  $('machines').innerHTML = list.length
+    ? list.map(machineCard).join('')
+    : '<p class="muted" style="margin:0;font-size:13px">Nenhuma ainda. Com o rodízio instalado em outro computador que este alcança por SSH, adicione-o para ver daqui as contas de lá e quem está com o bastão.</p>';
+}
+
+function openMachineAdd() {
+  job = null;
+  $('dlg-body').dataset.sig = '';
+  $('dlg-body').innerHTML = `<h2>Adicionar máquina</h2>
+    <p>Outro computador com o rodízio instalado, que este alcança por SSH sem pedir senha (com chave). Use o nome do host como está no seu <code>~/.ssh/config</code>.</p>
+    <label class="field">Host SSH <input id="f-host" autocomplete="off" spellcheck="false" placeholder="devbox"></label>
+    <p class="hint">Daqui só roda <code>rodizio status --json</code> lá, a cada minuto. Desligada ou hibernando, ela aparece sem resposta: nada a acorda.</p>
+    <div class="dlg-actions"><button class="btn" data-act="close">Cancelar</button><button class="btn solid" data-act="machine-save">Adicionar</button></div>`;
+  if (!$('dlg').open) $('dlg').showModal();
+  $('f-host').focus();
 }
 
 /** The agent version this page was written for (API_VERSION in src/core.mjs). */
@@ -776,7 +845,7 @@ function updateRule() {
 
 function renderRules() {
   const c = S.config;
-  $('rules').innerHTML = `<h2>Regras</h2><p class="muted" style="margin:0;font-size:13px">Valem na hora; ficam salvas neste Mac.</p>
+  $('rules').innerHTML = `<h2>Regras</h2><p class="muted" style="margin:0;font-size:13px">Valem na hora; ficam salvas ${mac() ? 'neste Mac' : 'nesta máquina'}.</p>
     <div class="rule"><p>Zona de passagem da semana<small>Com ${pct(c.remainingPct)}, o bastão passa quando a conta chega a ${S.trigger}% da semana.</small></p>
       ${marginControl('remainingPct', 'Margem da semana')}</div>
     ${toggle('fiveHourSwitch', 'Trocar também na janela de 5 h', 'Quando a janela de 5 h da conta em uso chega na zona, outra conta cobre até ela renovar. Se a janela renova em menos de 5 minutos, ele espera.')}
@@ -784,10 +853,10 @@ function renderRules() {
       ${marginControl('fiveHourRemainingPct', 'Margem da janela de 5 h')}</div>` : ''}
     ${toggle('auto', 'Troca automática', 'Passa o bastão sozinho na zona de passagem.')}
     ${toggle('returnToPreferred', 'Voltar para a preferida', 'Quando a primeira da fila tem folga de novo nas duas janelas, o bastão volta para ela. Uma escolha à mão fica até a zona.')}
-    ${toggle('notify', 'Avisar no Mac', 'Notificação com som a cada troca.')}
+    ${mac() ? toggle('notify', 'Avisar no Mac', 'Notificação com som a cada troca.') : ''}
     ${toggle('useApi', 'Ler o uso na Anthropic', 'No mesmo endereço do /usage, com o token de cada conta. Desligado: só a linha de status mede.')}
     ${c.useApi ? toggle('pollParked', 'Ler também as contas paradas', 'A cada 15 minutos, para a fila saber quem ainda tem saldo.') : ''}
-    ${toggle('incognitoLogin', 'Login em janela anônima', 'Abre o login no Brave (ou Chrome) anônimo, para não cair na conta aberta no navegador.')}
+    ${mac() ? toggle('incognitoLogin', 'Login em janela anônima', 'Abre o login no Brave (ou Chrome) anônimo, para não cair na conta aberta no navegador.') : ''}
     ${toggle('autoUpdate', 'Atualizar sozinho', 'Instala as versões novas publicadas no GitHub, só as assinadas pelo autor, e volta para a anterior se algo falhar. O vigia procura a cada 6 h.')}
     ${updateRule()}`;
 }
@@ -834,7 +903,9 @@ function openConnect(email = '', reconnect = null) {
   $('dlg-body').dataset.sig = '';
   const acc = reconnect && S.accounts.find((a) => a.id === reconnect);
   $('dlg-body').innerHTML = `<h2>${acc ? `Reconectar ${esc(acc.email)}` : 'Conectar uma conta'}</h2>
-    <p>Abre o login oficial da Anthropic${S.config.incognitoLogin ? ' numa janela anônima' : ''}. Entre na conta${acc ? '' : ' que quer pôr no rodízio'} e autorize o Claude Code.</p>
+    <p>${mac()
+      ? `Abre o login oficial da Anthropic${S.config.incognitoLogin ? ' numa janela anônima' : ''}. Entre na conta${acc ? '' : ' que quer pôr no rodízio'} e autorize o Claude Code.`
+      : `Esta máquina não tem navegador: o login oficial da Anthropic abre no seu, por um link. Entre na conta${acc ? '' : ' que quer pôr no rodízio'}, autorize o Claude Code e cole aqui o código longo que a página mostra no fim.`}</p>
     ${acc ? '' : `<label class="field">E-mail da conta <span class="muted" style="font-weight:400">(opcional, já preenche a página)</span>
       <input id="f-email" type="email" autocomplete="off" placeholder="voce@exemplo.com" value="${esc(email)}"></label>`}
     <div class="dlg-actions"><button class="btn" data-act="close">Cancelar</button>
@@ -851,13 +922,17 @@ function renderJob() {
   if ($('dlg-body').dataset.sig === sig) return;
   let html = '';
   if (j.status === 'iniciando' || j.status === 'aguardando' || j.status === 'finalizando') {
+    const codeRow = '<div class="code-row"><input id="f-code" autocomplete="off" placeholder="código longo da página de autorização"><button class="btn" data-act="code">Enviar</button></div>';
     html = `<h2>Entre na conta${j.email ? ` ${esc(j.email)}` : ''}</h2>
-      <div class="wait"><div class="spin"></div><p>${j.status === 'finalizando' ? 'Login feito. Guardando no Keychain…' : 'Esperando você terminar o login na janela que abriu…'}</p></div>
-      <p class="hint">Se o claude.ai pedir um <b>código de 6 dígitos</b> enviado por e-mail, digite-o <b>na própria página do claude.ai</b>, na janela de login. Não clique no link do e-mail: ele abre fora da janela anônima.</p>
+      <div class="wait"><div class="spin"></div><p>${j.status === 'finalizando' ? `Login feito. Guardando${mac() ? ' no Keychain' : ''}…` : mac() ? 'Esperando você terminar o login na janela que abriu…' : j.manualUrl ? 'Esperando o código da página de autorização…' : 'Preparando o link de login…'}</p></div>
+      <p class="hint">Se o claude.ai pedir um <b>código de 6 dígitos</b> enviado por e-mail, digite-o <b>na própria página do claude.ai</b>, na janela de login. Não clique no link do e-mail: ele abre fora da janela ${mac() ? 'anônima' : 'do login'}.</p>
       ${j.browserUrl ? `<p>A janela não abriu? <a href="${esc(j.browserUrl)}" target="_blank" rel="noopener noreferrer">Abrir o login aqui</a>.</p>` : ''}
-      ${j.manualUrl ? `<details class="alt"${$('f-code')?.value ? ' open' : ''}><summary style="cursor:pointer">Fazendo o login em outro aparelho?</summary>
+      ${!j.manualUrl ? ''
+        : mac() ? `<details class="alt"${$('f-code')?.value ? ' open' : ''}><summary style="cursor:pointer">Fazendo o login em outro aparelho?</summary>
         <p style="margin:8px 0 0">Abra <a href="${esc(j.manualUrl)}" target="_blank" rel="noopener noreferrer">este link</a> lá. No fim, a página de autorização mostra um <b>código longo</b> (não o de 6 dígitos do e-mail); cole aqui:</p>
-        <div class="code-row"><input id="f-code" autocomplete="off" placeholder="código longo da página de autorização"><button class="btn" data-act="code">Enviar</button></div></details>` : ''}
+        ${codeRow}</details>`
+        : `<p>1. Abra <a href="${esc(j.manualUrl)}" target="_blank" rel="noopener noreferrer">o login</a>, de preferência numa janela anônima, para não cair na conta já aberta no navegador.<br>
+        2. No fim, a página de autorização mostra um <b>código longo</b> (não o de 6 dígitos do e-mail); cole aqui:</p>${codeRow}`}
       <div class="dlg-actions"><button class="btn" data-act="cancel">Cancelar login</button></div>`;
   } else if (j.status === 'concluido') {
     html = `<h2>Conta no rodízio</h2>
@@ -974,6 +1049,16 @@ document.addEventListener('click', (ev) => {
       return api('POST', `/api/jobs/${job.id}/code`, { code }).then((j) => { job = j; toast('Código enviado.'); }).catch((e) => toast(e.message, true));
     }
     case 'cancel': return api('POST', `/api/jobs/${job.id}/cancel`).catch((e) => toast(e.message, true));
+    case 'machine-add': return openMachineAdd();
+    case 'machine-save': {
+      const host = $('f-host')?.value.trim() ?? '';
+      return act(async () => { const r = await api('POST', '/api/machines', { host }); $('dlg').close(); return r; }, `${host} adicionada: consultando…`);
+    }
+    case 'machine-check': return act(() => api('POST', `/api/machines/${encodeURIComponent(el.dataset.host)}/check`));
+    case 'machine-open': return act(() => api('POST', `/api/machines/${encodeURIComponent(el.dataset.host)}/open`), `Abrindo o painel de ${el.dataset.host}…`);
+    case 'machine-remove':
+      if (!confirm(`Tirar ${el.dataset.host} da lista? Nada muda lá: só deixa de ser visto daqui.`)) return;
+      return act(() => api('POST', `/api/machines/${encodeURIComponent(el.dataset.host)}/remove`), `${el.dataset.host} saiu da lista.`);
   }
 });
 document.addEventListener('click', (ev) => {
@@ -988,6 +1073,7 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter' && ev.target.classList?.contains('margin-custom')) ev.target.blur();
   if (ev.key === 'Enter' && ev.target.id === 'f-email') document.querySelector('[data-act="start"]')?.click();
   if (ev.key === 'Enter' && ev.target.id === 'f-code') document.querySelector('[data-act="code"]')?.click();
+  if (ev.key === 'Enter' && ev.target.id === 'f-host') document.querySelector('[data-act="machine-save"]')?.click();
 });
 $('btn-connect').addEventListener('click', () => openConnect(''));
 $('btn-refresh').addEventListener('click', () => act(() => api('POST', '/api/refresh'), 'Uso atualizado.'));
@@ -1000,7 +1086,7 @@ function locked() {
   $('baton').className = 'empty';
   $('baton').innerHTML = `<p class="eyebrow">Por segurança</p><h1>Abra o painel pelo terminal</h1>
     <p class="ink2">A chave de acesso vem no endereço que o comando abre. Rode:</p><p><code>rodizio painel</code></p>`;
-  for (const id of ['kpis', 'relay-block', 'lanes-block', 'lower', 'btn-refresh', 'btn-connect']) $(id).hidden = true;
+  for (const id of ['kpis', 'relay-block', 'lanes-block', 'machines-block', 'lower', 'btn-refresh', 'btn-connect']) $(id).hidden = true;
   $('banner').innerHTML = '';
   $('foot').innerHTML = '';
 }

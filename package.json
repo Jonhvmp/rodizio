@@ -1,7 +1,7 @@
 {
   "name": "rodizio",
   "version": "0.5.0",
-  "description": "Rodízio local de várias contas do Claude Code: troca de conta perto do fim da semana ou da janela de 5 h, painel ao vivo em 127.0.0.1, nada sai do seu Mac.",
+  "description": "Rodízio local de várias contas do Claude Code: troca de conta perto do fim da semana ou da janela de 5 h, painel ao vivo em 127.0.0.1, no Mac ou num servidor Linux, e nada sai da sua máquina.",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -15,11 +15,13 @@
     "multi-account",
     "rate-limit",
     "macos",
+    "linux",
     "privacy",
     "local-first"
   ],
   "os": [
-    "darwin"
+    "darwin",
+    "linux"
   ],
   "bin": {
     "rodizio": "bin/rodizio"

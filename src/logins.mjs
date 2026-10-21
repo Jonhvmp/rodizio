@@ -28,8 +28,13 @@ const PRIVATE_BROWSERS = [
 
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
-/** The $BROWSER that `claude auth login` calls: remembers the address for the dashboard, then opens it. */
-export function browserScript(urlFile, incognito, appsDir = '/Applications') {
+/**
+ * The $BROWSER that `claude auth login` calls: remembers the address for the dashboard, then opens it. Off macOS (a
+ * server with no browser) it opens nothing and remembers nothing: that address finishes on a localhost callback that
+ * only this machine can answer, so the dashboard offers only the link that ends in a code to paste.
+ */
+export function browserScript(urlFile, incognito, appsDir = '/Applications', platform = process.platform) {
+  if (platform !== 'darwin') return '#!/bin/sh\nexit 0\n';
   const lines = ['#!/bin/sh', `printf '%s\\n' "$1" > ${shq(urlFile)}`];
   if (incognito) {
     for (const b of PRIVATE_BROWSERS) {

@@ -66,8 +66,22 @@ function spawnCli(args) {
   child.unref();
 }
 
+function machinesOf(core) {
+  if (!core.machines) throw new Error('outras máquinas não estão disponíveis neste agente');
+  return core.machines;
+}
+
+/** A host as HOST_RE in machines.mjs allows it, in a route. */
+const HOST = '([A-Za-z0-9][A-Za-z0-9._@-]*)';
+
 export function routes(core) {
   return [
+    // Other machines (machines.mjs). They come with the state; opening one's dashboard opens a tunnel and the browser,
+    // so it runs in a process of its own, like an update.
+    ['POST', /^\/api\/machines$/, (_, body) => (machinesOf(core).add(body.host), core.view())],
+    ['POST', new RegExp(`^/api/machines/${HOST}/check$`), async ([host]) => (await machinesOf(core).poll(machinesOf(core).known(host)), core.view())],
+    ['POST', new RegExp(`^/api/machines/${HOST}/remove$`), ([host]) => (machinesOf(core).remove(host), core.view())],
+    ['POST', new RegExp(`^/api/machines/${HOST}/open$`), ([host]) => (machinesOf(core).known(host), spawnCli(['painel', '--maquina', host]), { started: true })],
     ['GET', /^\/api\/state$/, () => core.view()],
     ['POST', /^\/api\/refresh$/, async () => (await core.refresh(), core.view())],
     // Looking is quick (only the tag names); installing restarts the agent, so it runs in a process of its own.

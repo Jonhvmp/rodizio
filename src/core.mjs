@@ -1053,6 +1053,9 @@ export class Rodizio {
       now,
       port: cfg.port,
       home: displayPath(this.p.home),
+      // where this agent runs (the dashboard words logins and logins' windows for it), and the other machines it watches
+      platform: process.platform,
+      machines: this.machines?.view() ?? [],
       config,
       trigger,
       trigger5: fiveHourTriggerOf(cfg),

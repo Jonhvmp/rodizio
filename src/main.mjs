@@ -10,8 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { createApi } from './api.mjs';
 import { ClaudeCli } from './claudecli.mjs';
 import { Rodizio } from './core.mjs';
-import { MacKeychain } from './keychain.mjs';
-import { notifyMac } from './notify.mjs';
+import { systemKeychain } from './keychain.mjs';
+import { Machines } from './machines.mjs';
+import { systemNotify } from './notify.mjs';
 import { claudeJsonPath, paths } from './paths.mjs';
 import { syncWatchdog } from './install.mjs';
 import { createServer } from './server.mjs';
@@ -202,8 +203,13 @@ export async function startAgent({ demo = process.env.RODIZIO_DEMO === '1' } = {
   const config = await ensureConfig(p);
   const deps = demo
     ? (await import('./demo.mjs')).demoDeps(p)
-    : { kc: new MacKeychain(), api: createApi(), cli: new ClaudeCli(), claudeJson: claudeJsonPath(), notify: notifyMac };
+    : { kc: systemKeychain({ accountsDir: p.accounts }), api: createApi(), cli: new ClaudeCli(), claudeJson: claudeJsonPath(), notify: systemNotify() };
   const core = new Rodizio({ paths: p, config, log, ...deps });
+  // Other computers with a rodízio of their own, watched over SSH (none in the demo: it would call real machines).
+  if (!demo) {
+    core.machines = new Machines({ home: p.home, onChange: () => core.changed(), log });
+    core.machines.start();
+  }
   if (!demo) afterUpdate(core, p);
   const server = await listen(core, config, p);
   log.info(`rodízio ${demo ? '(demonstração) ' : ''}no ar: http://rodizio.localhost:${config.port}/`);
@@ -221,6 +227,7 @@ export async function startAgent({ demo = process.env.RODIZIO_DEMO === '1' } = {
     if (stopping) return;
     stopping = true;
     for (const w of watchers) w?.close();
+    core.machines?.stop();
     server.close();
     const forced = setTimeout(() => process.exit(0), STOP_WAIT_MS);
     try {

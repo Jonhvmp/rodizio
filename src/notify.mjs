@@ -12,3 +12,6 @@ export function notifyMac(title, text) {
     // a notification is never worth failing for
   }
 }
+
+/** On macOS, Notification Center. Elsewhere (a server with no screen) nothing: the history in the dashboard has it. */
+export const systemNotify = (platform = process.platform) => (platform === 'darwin' ? notifyMac : () => {});

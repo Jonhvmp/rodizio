@@ -1,14 +1,25 @@
-// macOS Keychain through `security`, the same tool Claude Code uses for its own items.
+// Where Claude Code keeps a login: on macOS, a Keychain item read and written through `security`, the same tool Claude
+// Code uses for its own items; on Linux, a .credentials.json file in the config folder. Both answer to the same names
+// (services), so the rotation does not know which one it is talking to.
 
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
 import { readJson, run, writeJsonAtomic } from './util.mjs';
 
 export const MAIN_SERVICE = 'Claude Code-credentials';
+/** The file Claude Code keeps the login in, on Linux, inside the config folder (~/.claude, or CLAUDE_CONFIG_DIR). */
+export const CREDENTIALS_FILE = '.credentials.json';
+
+/** service → folder, for every folder named here: on Linux the service is only a name, and the file is in the folder. */
+const folders = new Map();
 
 /** Claude Code names the item of a non-default CLAUDE_CONFIG_DIR after a hash of that path. */
 export function serviceForDir(dir) {
-  return `${MAIN_SERVICE}-${createHash('sha256').update(dir).digest('hex').slice(0, 8)}`;
+  const service = `${MAIN_SERVICE}-${createHash('sha256').update(dir).digest('hex').slice(0, 8)}`;
+  folders.set(service, dir);
+  return service;
 }
 
 const NOT_FOUND = 44;
@@ -61,6 +72,66 @@ export class MacKeychain {
   async remove(service) {
     await this.run(['security', 'delete-generic-password', '-a', this.account, '-s', service]);
   }
+}
+
+/**
+ * Linux: the .credentials.json Claude Code itself reads, ~/.claude for the main login and the account's own folder for
+ * the others, only for this user (0600, folders 0700). A service the agent never named this run (it names every
+ * account folder when it loads them) is looked up among the folders in `accountsDir`.
+ */
+export class LinuxKeychain {
+  constructor({ home = os.homedir(), accountsDir = null } = {}) {
+    this.home = home;
+    this.accountsDir = accountsDir;
+  }
+
+  fileFor(service) {
+    if (service === MAIN_SERVICE) return path.join(this.home, '.claude', CREDENTIALS_FILE);
+    let dir = folders.get(service);
+    if (!dir && this.accountsDir) {
+      let names = [];
+      try {
+        names = fs.readdirSync(this.accountsDir);
+      } catch {
+        // no account folder yet
+      }
+      dir = names.map((n) => path.join(this.accountsDir, n)).find((d) => serviceForDir(d) === service);
+    }
+    if (!dir) throw new Error(`não sei em que pasta fica o login ${service}`);
+    return path.join(dir, CREDENTIALS_FILE);
+  }
+
+  /** null when there is no login there; throws when the file is unreadable or not JSON, like the Keychain. */
+  async read(service) {
+    const file = this.fileFor(service);
+    let text;
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      throw new Error(`não consegui ler ${file}`);
+    }
+    if (!text.trim()) return null;
+    const v = JSON.parse(text);
+    return v && typeof v === 'object' ? v : null;
+  }
+
+  /** Atomic (Claude Code may be reading it at the same moment), and read back like the Keychain write. */
+  async write(service, obj) {
+    const file = this.fileFor(service);
+    writeJsonAtomic(file, obj, 0o600);
+    const back = await this.read(service);
+    if (JSON.stringify(back) !== JSON.stringify(obj)) throw new Error(`não confirmei a gravação de ${file}`);
+  }
+
+  async remove(service) {
+    fs.rmSync(this.fileFor(service), { force: true });
+  }
+}
+
+/** The store of this system: the Keychain on macOS, the credential files on Linux. */
+export function systemKeychain({ accountsDir = null, platform = process.platform } = {}) {
+  return platform === 'darwin' ? new MacKeychain() : new LinuxKeychain({ accountsDir });
 }
 
 /** Stand-in used by the demo: same interface, a plain JSON file. */

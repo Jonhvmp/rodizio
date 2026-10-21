@@ -7,13 +7,16 @@ import { readJson } from './util.mjs';
 const HELP = `rodizio: rodízio local das contas do Claude Code
 
   rodizio painel               abre o painel no navegador (e religa o agente antes, se precisar)
+      --url                    só mostra o endereço, com a chave de acesso
+      --maquina <host>         abre aqui o painel de outra máquina, por um túnel SSH
   rodizio status               contas, uso e a conta em uso
+      --json                   o estado inteiro, para outra máquina ler (Outras máquinas)
   rodizio trocar <e-mail>      troca agora para essa conta
   rodizio doctor [--reparar]   confere agente, vigia, painel, linha de status, comando e app
   rodizio atualizar            instala a versão publicada mais nova (assinada), se houver
       --verificar              só diz se há versão nova
   rodizio versao               a versão instalada
-  rodizio instalar             agente e vigia no launchd, linha de status, o comando e o app Rodízio
+  rodizio instalar             agente e vigia no launchd (macOS) ou no systemd (Linux), linha de status, o comando e, no Mac, o app
       --sem-linha-de-status    não mexe em ~/.claude/settings.json
   rodizio desinstalar          tira agente, vigia, linha de status, comando e app
       --apagar-tudo            também apaga os logins guardados e ~/.rodizio
@@ -42,13 +45,22 @@ async function call(method, route, body) {
 const pct = (w) => (w?.pct === null || w?.pct === undefined ? '  —' : `${Math.round(w.pct)}%`.padStart(4));
 const day = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
-async function status() {
+async function status(json = false) {
   const c = config();
   let s;
   try {
     s = await call('GET', '/api/state');
   } catch {
+    if (json) {
+      console.log(JSON.stringify({ erro: `o agente de lá não responde em 127.0.0.1:${c.port}` }));
+      process.exitCode = 1;
+      return;
+    }
     console.log(`O agente não está respondendo em 127.0.0.1:${c.port}. Rode \`rodizio instalar\` ou veja ${path.join(paths().logs, 'agente.log')}.`);
+    return;
+  }
+  if (json) {
+    console.log(JSON.stringify(s));
     return;
   }
   const five = s.config.fiveHourSwitch ? ` ou de ${s.trigger5}% da janela de 5 h` : '';
@@ -67,14 +79,26 @@ export async function main(args) {
   try {
     switch (cmd) {
       case 'painel': {
+        const at = rest.indexOf('--maquina');
+        if (at >= 0) {
+          const host = rest[at + 1] ?? '';
+          const { openRemotePanel } = await import('./machines.mjs');
+          const url = await openRemotePanel(host, { ownPort: readJson(paths().config, null)?.port ?? null });
+          console.log(`Painel de ${host} aberto em ${url} (túnel SSH).`);
+          return;
+        }
         const { dashboardUrl, doctor, health } = await import('./install.mjs');
+        const quiet = rest.includes('--url');
         let c = config();
         if (!(await health(c.port))) {
           // the agent is down or hung: put it back before opening a page that would not load
-          await doctor({ repair: true, watch: true, out: (s) => console.log(s) });
+          await doctor({ repair: true, watch: true, out: (s) => (quiet ? console.error(s) : console.log(s)) });
           c = config();
         }
-        spawnSync('open', [`${dashboardUrl(c)}#t=${c.token}`]);
+        const url = `${dashboardUrl(c)}#t=${c.token}`;
+        if (quiet) console.log(url);
+        else if (process.platform === 'darwin') spawnSync('open', [url]);
+        else console.log(`Painel: ${url}\nAqui não há navegador: no Mac, adicione esta máquina em "Outras máquinas", no painel de lá.`);
         return;
       }
       case 'atualizar': {
@@ -113,7 +137,7 @@ export async function main(args) {
         return await (await import('./install.mjs')).doctor({ repair: watch || rest.includes('--reparar'), watch });
       }
       case 'status':
-        return await status();
+        return await status(rest.includes('--json'));
       case 'trocar': {
         const email = (rest[0] ?? '').toLowerCase();
         if (!email) throw new Error('uso: rodizio trocar <e-mail>');
