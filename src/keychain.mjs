@@ -129,7 +129,7 @@ export class LinuxKeychain {
   }
 }
 
-/** The store of this system: the Keychain on macOS, the credential files on Linux. */
+/** The store of this system: the Keychain on macOS, the credential files on Linux and Windows (the same layout). */
 export function systemKeychain({ accountsDir = null, platform = process.platform } = {}) {
   return platform === 'darwin' ? new MacKeychain() : new LinuxKeychain({ accountsDir });
 }

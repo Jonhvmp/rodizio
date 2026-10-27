@@ -53,20 +53,36 @@ export function currentVersion(repo = REPO) {
 /**
  * git in the clone, never prompting (an unattended update must fail instead of hanging) and never running hooks.
  * Only talking to the origin uses your git settings (a proxy, say); everything else ignores them, so no filter, hook
- * or signing program of yours runs during an update or changes how a signature is checked.
+ * or signing program of yours runs during an update or changes how a signature is checked. The null file is spelled
+ * /dev/null even on Windows: git for Windows takes that name, and refuses os.devNull there (\\.\nul).
  */
 function git(repo, args, { timeoutMs = 60_000, network = false } = {}) {
-  const r = spawnSync('git', ['-C', repo, '-c', 'core.hooksPath=/dev/null', ...args], {
+  const r = spawnSync('git', ['-C', repo, '-c', 'core.hooksPath=/dev/null', ...(network ? [] : ['-c', `core.autocrlf=${autocrlf(repo)}`]), ...args], {
     encoding: 'utf8',
     timeout: timeoutMs,
+    windowsHide: true,
     env: {
       ...process.env,
       GIT_TERMINAL_PROMPT: '0',
       GIT_SSH_COMMAND: 'ssh -o BatchMode=yes',
-      ...(network ? {} : { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull }),
+      ...(network ? {} : { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }),
     },
   });
   return { ok: r.status === 0, out: (r.stdout ?? '').trim(), err: (r.stderr ?? '').trim() || r.error?.message || '' };
+}
+
+/**
+ * The line endings the clone was checked out with. Git for Windows sets core.autocrlf=true in its own config, which
+ * the checks above ignore: without it, every file of a Windows clone would look changed. Reading a setting runs nothing.
+ */
+const crlf = new Map();
+function autocrlf(repo) {
+  if (!crlf.has(repo)) {
+    const r = spawnSync('git', ['-C', repo, 'config', '--get', 'core.autocrlf'], { encoding: 'utf8', windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
+    const v = (r.stdout ?? '').trim().toLowerCase();
+    crlf.set(repo, ['true', 'input'].includes(v) ? v : 'false');
+  }
+  return crlf.get(repo);
 }
 
 /** The newest release tag on origin, by asking it (a light request: only the tag names come back). */

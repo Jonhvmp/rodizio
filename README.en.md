@@ -51,9 +51,15 @@ cloud, no third-party server, no account to create, no telemetry, no npm depende
 
 ## Requirements
 
-macOS (or Linux with systemd, see below), Node.js 20+, [Claude Code](https://code.claude.com/docs) logged into one of
+macOS, Linux with systemd or Windows 10/11 (see below), Node.js 20+, [Claude Code](https://code.claude.com/docs) logged into one of
 your accounts, two or more Claude Pro or Max accounts of your own. Optional: Brave or Chrome, so other logins open in a
 private window.
+
+On Windows (native Claude Code, `claude.exe`), the same `node binodizio instalar` sets up two scheduled tasks of
+your user (`rodizio-agente` at logon, `rodizio-vigia` every 5 minutes; no window, no administrator), the command
+`rodizio.cmd` in `~.localin` and Rodízio in the Start menu; logins live in the `.credentials.json` Claude Code
+itself uses there, other logins open in a private Brave, Chrome, Edge or Firefox window, and switches show as Windows
+notifications.
 
 On a Linux server, the same `node bin/rodizio instalar` sets up systemd user units, and logins live in the
 `.credentials.json` Claude Code itself uses there. It has no browser: add the host (as named in your `~/.ssh/config`)

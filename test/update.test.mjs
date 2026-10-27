@@ -70,7 +70,7 @@ test('versions compare by number', () => {
 test('up to date: nothing to do; a signed release on main installs, staying on main', async () => {
   const w = world();
   let r = await maybeUpdate({ home: w.home, repo: w.user, auto: true, force: true });
-  assert.equal(r.status, 'em-dia');
+  assert.equal(r.status, 'em-dia', JSON.stringify(r.record));
   w.release('1.1.0');
   r = await maybeUpdate({ home: w.home, repo: w.user, auto: true, force: true, restart: async () => true });
   assert.equal(r.status, 'atualizado', JSON.stringify(r.record));

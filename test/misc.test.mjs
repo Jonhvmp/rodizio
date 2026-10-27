@@ -12,6 +12,7 @@ import { cleanEnv } from '../src/claudecli.mjs';
 import { MacKeychain, decodeSecret, serviceForDir } from '../src/keychain.mjs';
 import { plist, removeStatusLine, setStatusLine } from '../src/install.mjs';
 import { browserScript, loginUrl } from '../src/logins.mjs';
+import { UNIX_MODES } from './helpers.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rodizio-misc-'));
 
@@ -78,7 +79,7 @@ test('~/.claude.json: only oauthAccount changes, mode is kept, lock is released'
   fs.writeFileSync(file, JSON.stringify({ a: 1, oauthAccount: { emailAddress: 'x' } }), { mode: 0o644 });
   await writeOauthAccount(file, { emailAddress: 'y' });
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { a: 1, oauthAccount: { emailAddress: 'y' } });
-  assert.equal(fs.statSync(file).mode & 0o777, 0o644);
+  if (UNIX_MODES) assert.equal(fs.statSync(file).mode & 0o777, 0o644);
   assert.equal(fs.existsSync(`${file}.lock`), false);
   assert.equal(readOauthAccount(file).emailAddress, 'y');
   fs.writeFileSync(file, '{"a": 1, "trunc');
@@ -111,9 +112,10 @@ test('install: the status line goes in with a backup, never over somebody else\'
   assert.match(setStatusLine('/opt/homebrew/bin/node', file), /configurada/);
   const s = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(s.hooks, { Stop: [] });
-  assert.match(s.statusLine.command, /^'\/opt\/homebrew\/bin\/node' '.*\/src\/statusline\.mjs'$/);
+  // in double quotes on Windows, where Claude Code may run it through cmd
+  assert.match(s.statusLine.command, UNIX_MODES ? /^'\/opt\/homebrew\/bin\/node' '.*\/src\/statusline\.mjs'$/ : /^"\/opt\/homebrew\/bin\/node" ".*\\src\\statusline\.mjs"$/);
   assert.ok(fs.existsSync(`${file}.rodizio.bak`));
-  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  if (UNIX_MODES) assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.match(setStatusLine('/opt/homebrew/bin/node', file), /já estava/);
   assert.match(removeStatusLine(file), /removida/);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).statusLine, undefined);

@@ -7,7 +7,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { nowS, readJson, writeJsonAtomic } from './util.mjs';
+import { nowS, openUrl, readJson, writeJsonAtomic } from './util.mjs';
 
 /** A host as written in ~/.ssh/config: never an option (no leading dash), never anything a shell would read. */
 export const HOST_RE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,99}$/;
@@ -31,7 +31,7 @@ export function sshRun(host, command, { timeoutMs = TIMEOUT_MS } = {}) {
     let err = '';
     let child;
     try {
-      child = spawn('ssh', sshArgs(host, command), { stdio: ['ignore', 'pipe', 'pipe'] });
+      child = spawn('ssh', sshArgs(host, command), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       resolve({ code: -1, out, err: e.message });
       return;
@@ -207,7 +207,7 @@ async function answers(port) {
  * its 127.0.0.1 (so the address, and the Host it checks, are the ones it expects), then the browser. Resolves to the
  * address without the key.
  */
-export async function openRemotePanel(host, { run = sshRun, ownPort = null, open = (url) => spawnSync('open', [url]), tunnel = openTunnel } = {}) {
+export async function openRemotePanel(host, { run = sshRun, ownPort = null, open = openUrl, tunnel = openTunnel } = {}) {
   if (!HOST_RE.test(host)) throw new Error('host inválido');
   const r = await run(host, `${THERE} painel --url`);
   if (r.code !== 0) throw new Error(`${host}: ${reason(r)}`);
@@ -215,18 +215,32 @@ export async function openRemotePanel(host, { run = sshRun, ownPort = null, open
   if (!m) throw new Error(`${host} não deu o endereço do painel (versão antiga lá? rode \`rodizio atualizar\` lá)`);
   const port = Number(m[1]);
   if (port === ownPort) throw new Error(`o painel de ${host} usa a mesma porta (${port}) que o deste computador: troque a porta de um deles`);
-  if (!(await answers(port))) tunnel(host, port);
+  if (!(await answers(port))) await tunnel(host, port);
   const base = `http://rodizio.localhost:${port}/`;
   open(`${base}#t=${m[2]}`);
   return base;
 }
 
 /** A tunnel in the background, apart from any shared SSH connection, that ends when the other machine goes away. */
-export function openTunnel(host, port) {
-  const r = spawnSync(
-    'ssh',
-    ['-fNT', '-o', 'ExitOnForwardFailure=yes', '-o', 'ControlMaster=no', '-o', 'ControlPath=none', ...SSH_OPTS, '-L', `${port}:127.0.0.1:${port}`, '--', host],
-    { stdio: 'ignore', timeout: 30_000 },
-  );
-  if (r.status !== 0) throw new Error(`não consegui abrir o túnel para a porta ${port} de ${host} (ela está ocupada aqui?)`);
+export async function openTunnel(host, port, platform = process.platform) {
+  const args = ['-o', 'ExitOnForwardFailure=yes', '-o', 'ControlMaster=no', '-o', 'ControlPath=none', ...SSH_OPTS, '-L', `${port}:127.0.0.1:${port}`, '--', host];
+  const failed = () => new Error(`não consegui abrir o túnel para a porta ${port} de ${host} (ela está ocupada aqui?)`);
+  if (platform !== 'win32') {
+    const r = spawnSync('ssh', ['-fNT', ...args], { stdio: 'ignore', timeout: 30_000 });
+    if (r.status !== 0) throw failed();
+    return;
+  }
+  // The ssh of Windows cannot go to the background by itself (-f): it is started detached, and the tunnel is up once
+  // the port answers here.
+  const child = spawn('ssh', ['-NT', ...args], { detached: true, stdio: 'ignore', windowsHide: true });
+  let exited = false;
+  child.on('error', () => (exited = true));
+  child.on('exit', () => (exited = true));
+  child.unref();
+  for (let t = 0; t < 30_000 && !exited; t += 250) {
+    if (await answers(port)) return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  child.kill();
+  throw failed();
 }

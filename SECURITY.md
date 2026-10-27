@@ -9,6 +9,7 @@ outro programa, site ou pessoa consiga usá-lo por você.
 |---|---|---|
 | Login de cada conta | Keychain do macOS, na entrada que o próprio Claude Code cria para a pasta da conta (`Claude Code-credentials-<hash>`) | O seu usuário do Mac, como o login do próprio Claude Code |
 | Login de cada conta, no Linux | O `.credentials.json` que o próprio Claude Code usa lá: `~/.claude/` para a conta em uso e a pasta de cada conta em `~/.rodizio/contas/` (arquivos 0600, pastas 0700) | O seu usuário daquela máquina, como o login do próprio Claude Code |
+| Login de cada conta, no Windows | O `.credentials.json` que o próprio Claude Code usa lá: `~.claude` para a conta em uso e a pasta de cada conta em `~.rodiziocontas`, dentro do seu perfil (o Windows não tem modos 0600/0700: vale a permissão do perfil, só do seu usuário) | O seu usuário daquela máquina, como o login do próprio Claude Code |
 | Outras máquinas | `~/.rodizio/maquinas.json`: só os nomes dos hosts SSH | O seu usuário |
 | Contas, uso, histórico, regras | `~/.rodizio/` (pasta 0700, arquivos 0600) | O seu usuário do Mac |
 | Chave de acesso do painel | `~/.rodizio/config.json` e o armazenamento local do navegador que abriu o painel | O seu usuário do Mac |

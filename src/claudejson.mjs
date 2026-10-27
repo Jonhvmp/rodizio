@@ -3,6 +3,7 @@
 
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
+import { renameRetrying } from './util.mjs';
 
 /** null when there is no account in it; undefined when the file cannot be read right now (half-written?). */
 export function readOauthAccount(file) {
@@ -66,7 +67,7 @@ export async function writeOauthAccount(file, account) {
     const tmp = `${file}.tmp.rodizio.${process.pid}.${randomBytes(6).toString('hex')}`;
     try {
       fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode, flag: 'wx' });
-      fs.renameSync(tmp, file);
+      renameRetrying(tmp, file);
     } catch (e) {
       fs.rmSync(tmp, { force: true });
       throw e;

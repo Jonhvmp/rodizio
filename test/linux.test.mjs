@@ -8,6 +8,7 @@ import { WATCH_EVERY_S, agentUnit, watchUnits } from '../src/install.mjs';
 import { CREDENTIALS_FILE, LinuxKeychain, MAIN_SERVICE, MacKeychain, serviceForDir, systemKeychain } from '../src/keychain.mjs';
 import { browserScript } from '../src/logins.mjs';
 import { notifyMac, systemNotify } from '../src/notify.mjs';
+import { UNIX_MODES } from './helpers.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rodizio-linux-'));
 const blob = (token) => ({ claudeAiOauth: { accessToken: token, refreshToken: `r-${token}`, expiresAt: 1 } });
@@ -20,7 +21,7 @@ test('linux keychain: the main login is ~/.claude/.credentials.json, only for th
   await kc.write(MAIN_SERVICE, blob('a'));
   const file = path.join(home, '.claude', CREDENTIALS_FILE);
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), blob('a'));
-  assert.equal(mode(file), 0o600);
+  if (UNIX_MODES) assert.equal(mode(file), 0o600);
   assert.deepEqual(await kc.read(MAIN_SERVICE), blob('a'));
   await kc.remove(MAIN_SERVICE);
   assert.equal(fs.existsSync(file), false);
@@ -33,8 +34,10 @@ test('linux keychain: an account login lives in its own folder, the one Claude C
   const kc = new LinuxKeychain({ home });
   await kc.write(serviceForDir(dir), blob('b'));
   const file = path.join(dir, CREDENTIALS_FILE);
-  assert.equal(mode(file), 0o600);
-  assert.equal(mode(dir), 0o700);
+  if (UNIX_MODES) {
+    assert.equal(mode(file), 0o600);
+    assert.equal(mode(dir), 0o700);
+  }
   assert.deepEqual(await kc.read(serviceForDir(dir)), blob('b'));
 });
 
@@ -79,7 +82,7 @@ test('systemd: the watchdog is a oneshot doctor --vigia that a timer runs every 
   const u = watchUnits({ node: '/n', logFile: '/l/vigia.log', pathEnv: '/bin', home: '/home/x' });
   assert.deepEqual(Object.keys(u).sort(), ['rodizio-vigia.service', 'rodizio-vigia.timer']);
   assert.match(u['rodizio-vigia.service'], /^Type=oneshot$/m);
-  assert.match(u['rodizio-vigia.service'], /^ExecStart="\/n" ".*\/bin\/rodizio" doctor --vigia$/m);
+  assert.match(u['rodizio-vigia.service'], /^ExecStart="\/n" ".*[\/\\]bin[\/\\]+rodizio" doctor --vigia$/m);
   assert.match(u['rodizio-vigia.timer'], new RegExp(`^OnUnitActiveSec=${WATCH_EVERY_S}$`, 'm'));
   assert.match(u['rodizio-vigia.timer'], /^WantedBy=timers\.target$/m);
 });

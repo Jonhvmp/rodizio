@@ -61,7 +61,7 @@ const CLI = fileURLToPath(new URL('../bin/rodizio', import.meta.url));
 
 /** `rodizio …` detached from the agent: it may restart the agent and must outlive it. */
 function spawnCli(args) {
-  const child = spawn(process.execPath, [CLI, ...args], { detached: true, stdio: 'ignore' });
+  const child = spawn(process.execPath, [CLI, ...args], { detached: true, stdio: 'ignore', windowsHide: true });
   child.on('error', () => {});
   child.unref();
 }
