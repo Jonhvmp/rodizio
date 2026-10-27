@@ -1,8 +1,7 @@
-import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { paths } from './paths.mjs';
-import { readJson } from './util.mjs';
+import { openUrl, readJson } from './util.mjs';
 
 const HELP = `rodizio: rodízio local das contas do Claude Code
 
@@ -16,7 +15,7 @@ const HELP = `rodizio: rodízio local das contas do Claude Code
   rodizio atualizar            instala a versão publicada mais nova (assinada), se houver
       --verificar              só diz se há versão nova
   rodizio versao               a versão instalada
-  rodizio instalar             agente e vigia no launchd (macOS) ou no systemd (Linux), linha de status, o comando e, no Mac, o app
+  rodizio instalar             agente e vigia no launchd (macOS), no systemd (Linux) ou no Agendador de Tarefas (Windows), linha de status, o comando e o app (no Mac e no Windows)
       --sem-linha-de-status    não mexe em ~/.claude/settings.json
   rodizio desinstalar          tira agente, vigia, linha de status, comando e app
       --apagar-tudo            também apaga os logins guardados e ~/.rodizio
@@ -97,8 +96,7 @@ export async function main(args) {
         }
         const url = `${dashboardUrl(c)}#t=${c.token}`;
         if (quiet) console.log(url);
-        else if (process.platform === 'darwin') spawnSync('open', [url]);
-        else console.log(`Painel: ${url}\nAqui não há navegador: no Mac, adicione esta máquina em "Outras máquinas", no painel de lá.`);
+        else if (!openUrl(url)) console.log(`Painel: ${url}\nAqui não há navegador: no Mac, adicione esta máquina em "Outras máquinas", no painel de lá.`);
         return;
       }
       case 'atualizar': {

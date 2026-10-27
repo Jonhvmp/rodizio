@@ -52,7 +52,8 @@ O código é pequeno e sem dependências justamente para você poder ler o que e
 
 ## Requisitos
 
-- macOS (usa o Keychain e o launchd), ou Linux com systemd (veja [Num servidor Linux](#num-servidor-linux))
+- macOS (usa o Keychain e o launchd), Linux com systemd (veja [Num servidor Linux](#num-servidor-linux)) ou Windows 10/11
+  (veja [No Windows](#no-windows))
 - Node.js 20 ou mais novo
 - [Claude Code](https://code.claude.com/docs) instalado e com login feito em uma das contas
 - Duas ou mais contas Claude Pro ou Max, suas
@@ -126,6 +127,29 @@ git clone https://github.com/Jonhvmp/rodizio.git ~/rodizio && cd ~/rodizio && no
 
 Cada máquina guarda os próprios logins e decide sozinha. Como o uso é da conta, não da máquina, as duas veem os mesmos
 números e, com as mesmas regras e a mesma ordem, escolhem a mesma conta.
+
+## No Windows
+
+Com o Claude Code nativo do Windows (o `claude.exe` do instalador oficial, em `~\.local\bin`), Node.js 20+ e o Git for
+Windows, no PowerShell:
+
+```powershell
+git clone https://github.com/Jonhvmp/rodizio.git $HOME\rodizio
+cd $HOME\rodizio
+node bin\rodizio instalar
+rodizio painel
+```
+
+- O login de cada conta fica no `.credentials.json` que o próprio Claude Code usa no Windows: `~\.claude\` para a conta
+  em uso e a pasta de cada conta em `~\.rodizio\contas\`, dentro do seu perfil, que só o seu usuário lê.
+- Agente e vigia viram duas tarefas do **Agendador de Tarefas** do seu usuário (`rodizio-agente`, no logon, e
+  `rodizio-vigia`, a cada 5 min), sem janela, sem senha guardada e sem precisar de administrador. Elas rodam também na
+  bateria; se o notebook suspender, o agente para junto e volta quando ele acorda.
+- O comando é `~\.local\bin\rodizio.cmd` (a mesma pasta do `claude.exe`, já no PATH), e o **Rodízio** fica no menu
+  Iniciar.
+- O login das outras contas abre numa janela anônima do Brave, Chrome, Edge ou Firefox, e as trocas aparecem como
+  notificações do Windows.
+- Não use o rodízio de dentro do WSL para o Claude Code do Windows: cada um tem o seu `~/.claude`.
 
 ## Como ele decide
 

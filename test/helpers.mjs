@@ -10,6 +10,9 @@ import { paths } from '../src/paths.mjs';
 export { MAIN_SERVICE };
 import { DEFAULT_CONFIG } from '../src/state.mjs';
 
+/** Unix file modes (0600, 0700): Windows has none to check; there the user profile's own permissions keep files private. */
+export const UNIX_MODES = process.platform !== 'win32';
+
 export const HOUR = 3600;
 export const T0 = 1_800_000_000;
 

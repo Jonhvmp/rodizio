@@ -33,7 +33,8 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
  * server with no browser) it opens nothing and remembers nothing: that address finishes on a localhost callback that
  * only this machine can answer, so the dashboard offers only the link that ends in a code to paste.
  */
-export function browserScript(urlFile, incognito, appsDir = '/Applications', platform = process.platform) {
+export function browserScript(urlFile, incognito, appsDir = '/Applications', platform = process.platform, env = process.env) {
+  if (platform === 'win32') return browserCmd(urlFile, incognito, env);
   if (platform !== 'darwin') return '#!/bin/sh\nexit 0\n';
   const lines = ['#!/bin/sh', `printf '%s\\n' "$1" > ${shq(urlFile)}`];
   if (incognito) {
@@ -43,6 +44,36 @@ export function browserScript(urlFile, incognito, appsDir = '/Applications', pla
   }
   lines.push('exec open "$1"');
   return lines.join('\n') + '\n';
+}
+
+// Windows: where each browser installs itself (for all users, or only for this one), and its private-window flag.
+const WINDOWS_BROWSERS = [
+  { exe: ['BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'], flag: '--incognito' },
+  { exe: ['Google', 'Chrome', 'Application', 'chrome.exe'], flag: '--incognito' },
+  { exe: ['Microsoft', 'Edge', 'Application', 'msedge.exe'], flag: '--inprivate' },
+  { exe: ['Mozilla Firefox', 'firefox.exe'], flag: '-private-window' },
+];
+
+/** Inside "…" in a .cmd file only % is still read by cmd. */
+const cmdq = (s) => `"${String(s).replace(/%/g, '%%')}"`;
+
+/**
+ * Windows: Claude Code runs $BROWSER through cmd, the address in quotes as its first argument. It is taken into a
+ * variable in quotes and used only through delayed expansion, so the & and % of the address are never read by cmd.
+ */
+function browserCmd(urlFile, incognito, env) {
+  const lines = ['@echo off', 'setlocal DisableDelayedExpansion', 'set "u=%~1"', 'setlocal EnableDelayedExpansion', `>${cmdq(urlFile)} echo(!u!`];
+  if (incognito) {
+    const roots = [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA].filter(Boolean);
+    for (const b of WINDOWS_BROWSERS) {
+      for (const root of roots) {
+        const exe = cmdq(path.win32.join(root, ...b.exe));
+        lines.push(`if exist ${exe} (start "" ${exe} ${b.flag} "!u!" & exit /b 0)`);
+      }
+    }
+  }
+  lines.push('start "" "!u!"');
+  return lines.join('\r\n') + '\r\n';
 }
 
 export class LoginJob {
@@ -69,7 +100,7 @@ export class LoginJob {
   start() {
     fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
     this.urlFile = path.join(this.dir, '.login-url');
-    const script = path.join(this.dir, '.abrir-login');
+    const script = path.join(this.dir, process.platform === 'win32' ? '.abrir-login.cmd' : '.abrir-login');
     fs.writeFileSync(script, browserScript(this.urlFile, this.incognito), { mode: 0o700 });
     this.child = this.cli.login(this.dir, { email: this.email, browser: script });
     this.setStatus('aguardando');

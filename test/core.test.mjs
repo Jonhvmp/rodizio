@@ -6,7 +6,7 @@ import { tokenHash } from '../src/blob.mjs';
 import { SAMPLE_GRACE_S } from '../src/core.mjs';
 import { MAIN_SERVICE, serviceForDir } from '../src/keychain.mjs';
 import { recordSample } from '../src/statusline.mjs';
-import { A, B, C, HOUR, T0, connect, login, putMain, sessionWrite, setup, waitJob } from './helpers.mjs';
+import { A, B, C, HOUR, T0, UNIX_MODES, connect, login, putMain, sessionWrite, setup, waitJob } from './helpers.mjs';
 
 const tokenOf = async (env, service) => (await env.kc.read(service))?.claudeAiOauth?.accessToken;
 const weekly = (pct, resetsAt = T0 + 3 * 24 * HOUR) => ({ weekly: { pct, resetsAt }, fiveHour: null });
@@ -52,7 +52,7 @@ test('switches at the threshold, keeps the MCP logins and updates ~/.claude.json
   const cj = JSON.parse(fs.readFileSync(env.claudeJson, 'utf8'));
   assert.equal(cj.oauthAccount.emailAddress, B.email);
   assert.equal(cj.numStartups, 7);
-  assert.equal(fs.statSync(env.claudeJson).mode & 0o777, 0o600);
+  if (UNIX_MODES) assert.equal(fs.statSync(env.claudeJson).mode & 0o777, 0o600);
   assert.match(env.core.state.events[0].text, /Troquei de a@exemplo.com \(96%\) para b@exemplo.com \(10%\)/);
   assert.equal(env.notes.length, 1);
 });

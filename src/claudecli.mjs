@@ -6,11 +6,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { run } from './util.mjs';
 
-export function findClaude(env = process.env, home = os.homedir()) {
-  const dirs = [...(env.PATH || '').split(':'), path.join(home, '.local', 'bin'), '/opt/homebrew/bin', '/usr/local/bin'];
+/**
+ * On Windows, claude.exe (the native install, in ~/.local/bin too): a claude.cmd from npm would need a shell to run,
+ * and nothing here is run through one.
+ */
+export function findClaude(env = process.env, home = os.homedir(), platform = process.platform) {
+  const win = platform === 'win32';
+  const p = win ? path.win32 : path.posix;
+  const dirs = [...(env.PATH || env.Path || '').split(win ? ';' : ':'), p.join(home, '.local', 'bin'), ...(win ? [] : ['/opt/homebrew/bin', '/usr/local/bin'])];
   for (const d of dirs) {
     if (!d) continue;
-    const c = path.join(d, 'claude');
+    const c = p.join(d, win ? 'claude.exe' : 'claude');
     try {
       fs.accessSync(c, fs.constants.X_OK);
       return c;
@@ -43,7 +49,7 @@ export class ClaudeCli {
     if (email) argv.push('--email', email);
     const env = cleanEnv(dir);
     if (browser) env.BROWSER = browser;
-    return spawn(this.bin, argv, { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    return spawn(this.bin, argv, { cwd: dir, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
   }
 
   /** Lets Claude Code refresh a parked account's token. Never call it for the account in use. */

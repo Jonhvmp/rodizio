@@ -1,5 +1,14 @@
 # Mudanças
 
+## Próxima versão
+
+- **Windows**: o rodízio roda também no Windows 10/11, com o Claude Code nativo. O login de cada conta fica no
+  `.credentials.json` que o próprio Claude Code usa lá; agente e vigia viram tarefas do Agendador de Tarefas do seu
+  usuário (sem janela, sem administrador); `rodizio.cmd` em `~\.local\bin`, o Rodízio no menu Iniciar, login em
+  janela anônima (Brave, Chrome, Edge ou Firefox) e notificações do Windows.
+- As atualizações automáticas funcionam num clone do Windows: o `core.autocrlf` do Git for Windows não faz mais todo
+  arquivo parecer mudado.
+
 ## 0.6.0
 
 - **Linux**: o rodízio roda também num Linux com systemd (um servidor na nuvem, por exemplo). O login de cada conta

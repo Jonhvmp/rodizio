@@ -62,6 +62,13 @@ async function listen(core, config, p) {
   throw new Error('não consegui abrir o painel');
 }
 
+/** A process's command line: `ps` on macOS and Linux; on Windows, which has no `ps`, what CIM knows of it. */
+function commandLineOf(pid) {
+  if (process.platform !== 'win32') return spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+  const query = `$p = Get-CimInstance Win32_Process -Filter 'ProcessId=${Number(pid)}'; if (-not $p) { exit 1 }; $p.CommandLine`;
+  return spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', query], { encoding: 'utf8', windowsHide: true });
+}
+
 /** Whether `pid` is a rodízio agent of this installation (a pid left behind may have been reused by another program). */
 function isAgent(pid) {
   try {
@@ -69,7 +76,7 @@ function isAgent(pid) {
   } catch (e) {
     if (e.code !== 'EPERM') return false;
   }
-  const r = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
+  const r = commandLineOf(pid);
   if (r.status !== 0) return false;
   return r.stdout.includes(SELF) || (r.stdout.includes(CLI) && /\bagente\b/.test(r.stdout));
 }
